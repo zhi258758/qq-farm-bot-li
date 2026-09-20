@@ -36,3 +36,9 @@ Entries discovered by the Agent during task execution should follow this format:
 - Context: 在移植 qq-nc 抓包模块到 qq-farm-bot 的过程中提出
 - Instructions:
   - 绝对不要修改协议（proto 定义 / 线上通信协议 / 既有登录协议行为），移植与新增功能只能复用现有协议，不得改动协议本身。
+
+[User Instruction Summary]
+- Date: 2026-09-20
+- Context: 用户明确表示看不懂英文
+- Instructions:
+  - 回复与说明一律使用简体中文，避免使用英文。
