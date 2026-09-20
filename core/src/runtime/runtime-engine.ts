@@ -144,12 +144,30 @@ function createRuntimeEngine(options: RuntimeEngineOptions = {}) {
     }
 
     function startAllAccounts(): void {
-        const accounts = (store.getAccounts().accounts || []);
+        const membershipGuard = require('../services/membership-guard');
+        const accounts = membershipGuard.listRunnableAccounts();
+        const skipped = (store.getAccounts().accounts || []).length - accounts.length;
         if (accounts.length > 0) {
-            log('系统', `发现 ${accounts.length} 个账号，正在启动...`);
+            log('系统', `发现 ${accounts.length} 个可运行账号，正在启动...`);
             accounts.forEach((acc: any) => startWorker(acc));
         } else {
-            log('系统', '未发现账号，请访问管理面板添加账号');
+            log('系统', '未发现可运行账号，请访问管理面板添加账号或兑换卡密');
+        }
+        if (skipped > 0) {
+            log('系统', `已跳过 ${skipped} 个会员过期或未开通的账号`);
+        }
+    }
+
+    function enforceMembershipWorkers(): void {
+        const membershipGuard = require('../services/membership-guard');
+        for (const [accountId, worker] of Object.entries(workers)) {
+            const acc = (store.getAccounts().accounts || []).find((item: any) => String(item.id) === String(accountId));
+            if (!acc) continue;
+            const startCheck = membershipGuard.canStartGameAccount(acc);
+            if (!startCheck.ok) {
+                log('系统', `停止无权限账号 ${(worker as any).name || accountId}: ${startCheck.error}`);
+                stopWorker(accountId);
+            }
         }
     }
 
@@ -170,6 +188,14 @@ function createRuntimeEngine(options: RuntimeEngineOptions = {}) {
         if (shouldAutoStartAccounts) {
             startAllAccounts();
         }
+
+        setInterval(() => {
+            try {
+                enforceMembershipWorkers();
+            } catch (error: any) {
+                log('系统', `会员守卫检查失败: ${error?.message || error}`);
+            }
+        }, 60 * 1000);
     }
 
     function stopAllAccounts(): void {
@@ -185,6 +211,7 @@ function createRuntimeEngine(options: RuntimeEngineOptions = {}) {
         dataProvider,
         start,
         startAllAccounts,
+        enforceMembershipWorkers,
         stopAllAccounts,
         broadcastConfigToWorkers,
         broadcastGameConfigReload,

@@ -86,7 +86,7 @@ async function refreshStatusFallback() {
 }
 
 async function handleAccountSaved() {
-  await accountStore.fetchAccounts()
+  await Promise.all([accountStore.fetchAccounts(), userStore.fetchUserInfo()])
   await refreshStatusFallback()
   showAccountModal.value = false
   showRemarkModal.value = false
@@ -98,11 +98,11 @@ function openRemarkModal(acc: any) {
   showAccountDropdown.value = false
 }
 
-onMounted(() => {
-  accountStore.fetchAccounts()
+onMounted(async () => {
+  await userStore.fetchUserInfo()
+  if (userStore.isAdmin || userStore.membershipActive)
+    accountStore.fetchAccounts()
   checkConnection()
-  // 获取当前用户信息
-  userStore.fetchUserInfo()
 })
 
 onBeforeUnmount(() => {
@@ -274,12 +274,33 @@ const connectionStatus = computed(() => {
 
 const navItems = computed(() => {
   return menuRoutes
+    .filter(item => !item.adminOnly || userStore.isAdmin)
+    .filter(item => !item.membershipRequired || userStore.isAdmin || userStore.membershipActive)
     .map(item => ({
       path: item.path ? `/${item.path}` : '/',
       label: item.label,
       icon: item.icon,
     }))
 })
+
+const canAddGameAccount = computed(() => {
+  if (userStore.isAdmin)
+    return true
+  if (!userStore.membershipActive)
+    return false
+  return userStore.slotUsed < userStore.slotLimit
+})
+
+function openAddAccount() {
+  showAccountDropdown.value = false
+  if (!canAddGameAccount.value) {
+    router.push({ path: '/settings', query: { tab: 'membership' } })
+    return
+  }
+  showAccountModal.value = true
+}
+
+const roleLabel = computed(() => userStore.isAdmin ? '超级管理员' : (userStore.membershipActive ? '会员用户' : '未开通会员'))
 
 function selectAccount(acc: any) {
   accountStore.setCurrentAccount(acc)
@@ -373,7 +394,7 @@ async function copyToken() {
               style="--focus-ring: var(--theme-primary)"
               aria-haspopup="menu"
               :aria-expanded="showUserDropdown"
-              :aria-label="isSidebarCollapsed ? `管理员：${userStore.username || '未登录'}` : undefined"
+              :aria-label="isSidebarCollapsed ? `${roleLabel}：${userStore.username || '未登录'}` : undefined"
               @click="toggleUserDropdown"
             >
               <div class="flex items-center gap-3 overflow-hidden">
@@ -397,7 +418,7 @@ async function copyToken() {
                     <span
                       class="admin-badge rounded-lg px-1.5 py-0.2 text-[10px] font-medium leading-tight"
                     >
-                      超级管理员
+                      {{ roleLabel }}
                     </span>
                   </div>
                 </div>
@@ -411,7 +432,7 @@ async function copyToken() {
           </template>
           <div class="sidebar-tooltip-content">
             <strong>{{ userStore.username || '未登录' }}</strong>
-            <span>超级管理员 · 点击查看账户菜单</span>
+            <span>{{ roleLabel }} · 点击查看账户菜单</span>
           </div>
         </NTooltip>
 
@@ -425,7 +446,7 @@ async function copyToken() {
               {{ userStore.username }}
             </div>
             <div class="text-xs text-gray-500 dark:text-gray-400">
-              超级管理员
+              {{ roleLabel }}
             </div>
           </div>
           <div class="py-1">
@@ -540,6 +561,7 @@ async function copyToken() {
                         {{ getPlatformLabel(acc.platform) }}
                       </span>
                       <span class="text-xs text-gray-400">{{ acc.uin || acc.id }}</span>
+                      <span v-if="userStore.isAdmin && acc.ownerUsername" class="text-xs text-gray-400">· {{ acc.ownerUsername }}</span>
                     </div>
                   </div>
                   <div v-if="currentAccount?.id === acc.id" class="i-carbon-checkmark" :style="{ color: 'var(--theme-primary)' }" />
@@ -559,7 +581,7 @@ async function copyToken() {
 
               quaternary block
               type="primary"
-              @click="showAccountModal = true; showAccountDropdown = false"
+              @click="openAddAccount"
             >
               <div class="i-carbon-add" />
               <span>添加账号</span>

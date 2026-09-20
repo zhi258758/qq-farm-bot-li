@@ -1,15 +1,22 @@
 <script setup lang="ts">
-const items = [
-  { path: '/', label: '首页', icon: 'i-carbon-home' },
-  { path: '/game-mall', label: '商城', icon: 'i-carbon-shopping-cart' },
-  { path: '/personal', label: '农场', icon: 'i-carbon-sprout' },
-  { path: '/activity', label: '活动', icon: 'i-carbon-events' },
-  { path: '/settings', label: '设置', icon: 'i-carbon-settings' },
-]
+import { computed } from 'vue'
+import { useUserStore } from '@/stores/user'
+
+const userStore = useUserStore()
+const items = computed(() => {
+  const all = [
+    { path: '/', label: '首页', icon: 'i-carbon-home', membershipRequired: true },
+    { path: '/game-mall', label: '商城', icon: 'i-carbon-shopping-cart', membershipRequired: true },
+    { path: '/personal', label: '农场', icon: 'i-carbon-sprout', membershipRequired: true },
+    { path: '/activity', label: '活动', icon: 'i-carbon-events', membershipRequired: true },
+    { path: '/settings', label: '设置', icon: 'i-carbon-settings', membershipRequired: false },
+  ]
+  return all.filter(item => !item.membershipRequired || userStore.isAdmin || userStore.membershipActive)
+})
 </script>
 
 <template>
-  <nav class="mobile-bottom-nav lg:hidden" aria-label="主要导航">
+  <nav class="mobile-bottom-nav lg:hidden" aria-label="主要导航" :style="{ '--nav-cols': String(items.length || 1) }">
     <RouterLink
       v-for="item in items"
       :key="item.path"
@@ -31,7 +38,7 @@ const items = [
   bottom: max(12px, env(safe-area-inset-bottom));
   left: max(14px, env(safe-area-inset-left));
   display: none;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(var(--nav-cols, 5), minmax(0, 1fr));
   min-height: 66px;
   padding: 7px 8px;
   border: 1px solid rgba(58, 86, 68, 0.12);

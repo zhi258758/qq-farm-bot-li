@@ -26,6 +26,9 @@ function getAppRootForWritable(): string {
 }
 
 function getDataDir(): string {
+    const override = String(process.env.QQFARM_DATA_DIR || '').trim();
+    if (override)
+        return override;
     return path.join(getAppRootForWritable(), 'data');
 }
 

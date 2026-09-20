@@ -4,6 +4,8 @@ export interface MenuItem {
   label: string
   icon: string
   component: () => Promise<any>
+  adminOnly?: boolean
+  membershipRequired?: boolean
   meta?: {
     fullBleed?: boolean
   }
@@ -15,6 +17,7 @@ export const menuRoutes: MenuItem[] = [
     name: 'dashboard',
     label: '概览',
     icon: 'i-carbon-dashboard',
+    membershipRequired: true,
     component: () => import('@/views/Dashboard.vue'),
   },
   {
@@ -22,6 +25,7 @@ export const menuRoutes: MenuItem[] = [
     name: 'personal',
     label: '个人',
     icon: 'i-carbon-sprout',
+    membershipRequired: true,
     component: () => import('@/views/Personal.vue'),
   },
   {
@@ -29,6 +33,7 @@ export const menuRoutes: MenuItem[] = [
     name: 'activity-center',
     label: '活动',
     icon: 'i-carbon-events',
+    membershipRequired: true,
     component: () => import('@/views/ActivityCenter.vue'),
   },
   {
@@ -36,6 +41,7 @@ export const menuRoutes: MenuItem[] = [
     name: 'friends',
     label: '好友',
     icon: 'i-carbon-user-multiple',
+    membershipRequired: true,
     component: () => import('@/views/Friends.vue'),
   },
   {
@@ -43,6 +49,7 @@ export const menuRoutes: MenuItem[] = [
     name: 'analytics',
     label: '分析',
     icon: 'i-carbon-chart-line',
+    membershipRequired: true,
     component: () => import('@/views/Analytics.vue'),
   },
   {
@@ -50,6 +57,7 @@ export const menuRoutes: MenuItem[] = [
     name: 'mystery-shop',
     label: '神秘商人',
     icon: 'i-carbon-store',
+    membershipRequired: true,
     component: () => import('@/views/MysteryShop.vue'),
   },
   {
@@ -57,6 +65,7 @@ export const menuRoutes: MenuItem[] = [
     name: 'game-mall',
     label: '游戏商城',
     icon: 'i-carbon-shopping-cart',
+    membershipRequired: true,
     component: () => import('@/views/GameMall.vue'),
   },
   {
@@ -65,5 +74,13 @@ export const menuRoutes: MenuItem[] = [
     label: '设置',
     icon: 'i-carbon-settings',
     component: () => import('@/views/Settings.vue'),
+  },
+  {
+    path: 'admin-users',
+    name: 'admin-users',
+    label: '用户与卡密',
+    icon: 'i-carbon-user-role',
+    adminOnly: true,
+    component: () => import('@/views/AdminUsers.vue'),
   },
 ]

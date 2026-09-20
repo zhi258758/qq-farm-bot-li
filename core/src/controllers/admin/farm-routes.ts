@@ -9,6 +9,7 @@ export {};
 
 const { getLevelExpProgress } = require('../../config/gameConfig');
 const store = require('../../models/store');
+const membershipGuard = require('../../services/membership-guard');
 
 const {
     createAuthRequired,
@@ -500,7 +501,12 @@ function mountFarmRoutes(app: Application, ctx: AdminContext): void {
     // API: 启动账号
     app.post('/api/accounts/:id/start', (req: Request, res: Response) => {
         try {
-            const accountId = resolveAccId(ctx, req.params.id);
+            const accountId = resolveAccId(ctx, req.params.id, req);
+            const account = (store.getAccounts()?.accounts || []).find((item: any) => String(item.id) === String(accountId));
+            const startCheck = membershipGuard.canStartGameAccount(account);
+            if (!startCheck.ok) {
+                return res.status(startCheck.status || 403).json({ ok: false, error: startCheck.error });
+            }
 
             const ok = ctx.provider.startAccount(accountId);
             if (!ok) {
@@ -515,7 +521,7 @@ function mountFarmRoutes(app: Application, ctx: AdminContext): void {
     // API: 停止账号
     app.post('/api/accounts/:id/stop', (req: Request, res: Response) => {
         try {
-            const accountId = resolveAccId(ctx, req.params.id);
+            const accountId = resolveAccId(ctx, req.params.id, req);
 
             const ok = ctx.provider.stopAccount(accountId);
             if (!ok) {

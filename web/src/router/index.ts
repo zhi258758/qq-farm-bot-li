@@ -2,6 +2,7 @@ import { useStorage } from '@vueuse/core'
 import axios from 'axios'
 import NProgress from 'nprogress'
 import { createRouter, createWebHistory } from 'vue-router'
+import { useUserStore } from '@/stores/user'
 import { menuRoutes } from './menu'
 import 'nprogress/nprogress.css'
 
@@ -27,8 +28,14 @@ async function ensureTokenValid() {
     timeout: 6000,
   }).then((res) => {
     const ok = !!(res.data && res.data.ok)
-    if (ok)
+    if (ok) {
       validatedToken = token
+      const payload = res.data.data || {}
+      if (payload.user || payload.role) {
+        const userStore = useUserStore()
+        userStore.applySession(payload)
+      }
+    }
     return ok
   }).catch(() => false).finally(() => {
     validatingPromise = null
@@ -67,8 +74,12 @@ router.beforeEach(async (to, _from) => {
       return true
     }
     const valid = await ensureTokenValid()
-    if (valid)
+    if (valid) {
+      const userStore = useUserStore()
+      if (!userStore.isAdmin && !userStore.membershipActive)
+        return { name: 'Settings', query: { tab: 'membership' } }
       return { name: 'dashboard' }
+    }
     adminToken.value = ''
     validatedToken = ''
     return true
@@ -85,6 +96,13 @@ router.beforeEach(async (to, _from) => {
     validatedToken = ''
     return { name: 'login' }
   }
+
+  const matched = menuRoutes.find(route => (route.path ? `/${route.path}` : '/') === to.path || route.name === to.name)
+  const userStore = useUserStore()
+  if (matched?.adminOnly && userStore.role !== 'admin')
+    return { name: 'Settings', query: { tab: 'membership' } }
+  if (matched?.membershipRequired && !userStore.isAdmin && !userStore.membershipActive)
+    return { name: 'Settings', query: { tab: 'membership' } }
 
   return true
 })

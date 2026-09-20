@@ -26,13 +26,16 @@ const userStore = useUserStore()
 const settingStore = useSettingStore()
 const statusStore = useStatusStore()
 
-type SettingsTab = 'account' | 'strategy' | 'automation' | 'system'
+type SettingsTab = 'account' | 'strategy' | 'automation' | 'membership' | 'system'
 const storedTab = localStorage.getItem('settings-active-tab')
-const settingsTabKeys: SettingsTab[] = ['account', 'strategy', 'automation', 'system']
+const settingsTabKeys: SettingsTab[] = ['account', 'strategy', 'automation', 'membership', 'system']
 const queryTab = String(route.query.tab || '')
-const initialTab = settingsTabKeys.includes(queryTab as SettingsTab)
+const preferredTab = settingsTabKeys.includes(queryTab as SettingsTab)
   ? queryTab as SettingsTab
   : storedTab === 'user' ? 'system' : (storedTab as SettingsTab) || 'account'
+const initialTab: SettingsTab = (!userStore.isAdmin && !userStore.membershipActive)
+  ? 'membership'
+  : preferredTab
 const activeTab = ref<SettingsTab>(initialTab)
 
 watch(activeTab, (newTab) => {
@@ -50,17 +53,30 @@ watch(() => route.query.tab, (value) => {
     activeTab.value = nextTab as SettingsTab
 })
 
-const tabs = [
-  { key: 'account', label: '账号管理', icon: 'i-carbon-user-profile' },
-  { key: 'strategy', label: '策略设置', icon: 'i-carbon-settings-adjust' },
-  { key: 'automation', label: '自动控制', icon: 'i-carbon-settings-adjust' },
-  { key: 'system', label: '系统设置', icon: 'i-carbon-settings' },
-] as const
+const tabs = computed(() => {
+  const list: Array<{ key: SettingsTab, label: string, icon: string }> = []
+  if (userStore.isAdmin || userStore.membershipActive) {
+    list.push(
+      { key: 'account', label: '账号管理', icon: 'i-carbon-user-profile' },
+      { key: 'strategy', label: '策略设置', icon: 'i-carbon-settings-adjust' },
+      { key: 'automation', label: '自动控制', icon: 'i-carbon-settings-adjust' },
+    )
+  }
+  list.push({ key: 'membership', label: '会员与卡密', icon: 'i-carbon-ticket' })
+  if (userStore.isAdmin)
+    list.push({ key: 'system', label: '系统设置', icon: 'i-carbon-settings' })
+  return list
+})
 
 function setActiveTab(value: string) {
-  if (tabs.some(tab => tab.key === value))
+  if (tabs.value.some(tab => tab.key === value))
     activeTab.value = value as typeof activeTab.value
 }
+
+watch(() => [userStore.isAdmin, userStore.membershipActive] as const, () => {
+  if (!tabs.value.some(tab => tab.key === activeTab.value))
+    activeTab.value = userStore.isAdmin || userStore.membershipActive ? 'account' : 'membership'
+}, { immediate: true })
 
 const modalVisible = ref(false)
 const modalConfig = ref({
@@ -124,13 +140,17 @@ const stoppedAccounts = computed(() => accounts.value.filter((acc: any) => !acc.
 const stoppedAccountsCount = computed(() => stoppedAccounts.value.length)
 
 onMounted(async () => {
-  await accountStore.fetchAccounts()
-  if (!currentAccountId.value && accounts.value.length > 0 && accounts.value[0]) {
-    accountStore.selectAccount(String(accounts.value[0].id))
+  await Promise.all([userStore.fetchUserInfo(), loadMyRedeems()])
+  if (userStore.isAdmin || userStore.membershipActive) {
+    await accountStore.fetchAccounts()
+    if (!currentAccountId.value && accounts.value.length > 0 && accounts.value[0]) {
+      accountStore.selectAccount(String(accounts.value[0].id))
+    }
+    if (currentAccountId.value)
+      await loadStrategyData(currentAccountId.value)
   }
-  if (currentAccountId.value)
-    await loadStrategyData(currentAccountId.value)
-  await Promise.all([loadSystemConfig(), loadDevicePresets()])
+  if (userStore.isAdmin)
+    await Promise.all([loadSystemConfig(), loadDevicePresets()])
 })
 
 function openSettings(account: any) {
@@ -138,7 +158,29 @@ function openSettings(account: any) {
   router.push('/settings')
 }
 
+const canManageGameAccounts = computed(() => userStore.isAdmin || userStore.membershipActive)
+const canAddGameAccount = computed(() => {
+  if (userStore.isAdmin)
+    return true
+  if (!userStore.membershipActive)
+    return false
+  return userStore.slotUsed < userStore.slotLimit
+})
+const addAccountDisabledReason = computed(() => {
+  if (userStore.isAdmin)
+    return ''
+  if (!userStore.membershipActive)
+    return '会员已过期，请兑换时间卡密'
+  if (userStore.slotUsed >= userStore.slotLimit)
+    return '账号槽位不足'
+  return ''
+})
+
 function openAddModal() {
+  if (!canAddGameAccount.value) {
+    showAlert(addAccountDisabledReason.value || '暂不可添加账号', 'danger')
+    return
+  }
   editingAccount.value = null
   showModal.value = true
 }
@@ -157,9 +199,10 @@ async function confirmDelete() {
   if (accountToDelete.value) {
     try {
       deleteLoading.value = true
-      await accountStore.deleteAccount(accountToDelete.value.id)
-      accountToDelete.value = null
-      showDeleteConfirm.value = false
+        await accountStore.deleteAccount(accountToDelete.value.id)
+        accountToDelete.value = null
+        showDeleteConfirm.value = false
+        await userStore.fetchUserInfo()
     }
     finally {
       deleteLoading.value = false
@@ -170,14 +213,23 @@ async function confirmDelete() {
 async function toggleAccount(account: any) {
   if (account.running) {
     await accountStore.stopAccount(account.id)
+    return
   }
-  else {
+  if (!canManageGameAccounts.value) {
+    showAlert('会员已过期，请兑换时间卡密', 'danger')
+    return
+  }
+  try {
     await accountStore.startAccount(account.id)
+  }
+  catch (e: any) {
+    showAlert(getApiErrorMessage(e, '启动失败'), 'danger')
   }
 }
 
 function handleSaved() {
   accountStore.fetchAccounts()
+  userStore.fetchUserInfo()
 }
 
 function selectAccount(account: any) {
@@ -210,7 +262,7 @@ async function confirmClearStopped() {
     }
     showClearStoppedConfirm.value = false
     showAlert(`成功清理 ${deletedCount} 个已停止的账号`, 'primary')
-    await accountStore.fetchAccounts()
+    await Promise.all([accountStore.fetchAccounts(), userStore.fetchUserInfo()])
   }
   finally {
     clearStoppedLoading.value = false
@@ -1067,6 +1119,62 @@ const passwordForm = ref({
   confirm: '',
 })
 
+const cardCode = ref('')
+const cardRedeeming = ref(false)
+const myRedeems = ref<Array<{ type: string, value: number, usedAt: number | null, code: string }>>([])
+
+function formatMembershipTime(value?: number | null) {
+  if (!value)
+    return '未开通'
+  return new Date(value).toLocaleString()
+}
+
+async function loadMyRedeems() {
+  if (userStore.isAdmin)
+    return
+  try {
+    const res = await userStore.fetchMyRedeems()
+    if (res.ok)
+      myRedeems.value = res.data || []
+  }
+  catch {
+    myRedeems.value = []
+  }
+}
+
+async function handleRedeemCard() {
+  if (!cardCode.value.trim()) {
+    showAlert('请输入卡密', 'danger')
+    return
+  }
+  cardRedeeming.value = true
+  try {
+    const res = await userStore.redeemCardKey(cardCode.value.trim())
+    if (res.ok) {
+      cardCode.value = ''
+      showAlert('兑换成功', 'primary')
+      await Promise.all([loadMyRedeems(), userStore.fetchUserInfo(), accountStore.fetchAccounts()])
+    }
+    else {
+      showAlert(res.error || '兑换失败', 'danger')
+    }
+  }
+  catch (e: any) {
+    showAlert(getApiErrorMessage(e, '兑换失败'), 'danger')
+  }
+  finally {
+    cardRedeeming.value = false
+  }
+}
+
+function redeemTypeLabel(type: string) {
+  return type === 'quota' ? '额度卡密' : '时间卡密'
+}
+
+function redeemValueLabel(item: { type: string, value: number }) {
+  return item.type === 'quota' ? `${item.value} 槽` : `${item.value} 天`
+}
+
 const localOffline = ref({
   channel: 'webhook',
   endpoint: '',
@@ -1209,7 +1317,7 @@ async function handleChangePassword() {
     showAlert('两次密码输入不一致', 'danger')
     return
   }
-  if (passwordForm.value.new.length < 6) {
+  if (userStore.isAdmin && passwordForm.value.new.length < 6) {
     showAlert('密码长度至少6位', 'danger')
     return
   }
@@ -1501,6 +1609,8 @@ async function handleResetSystemConfig() {
               <BaseButton
                 variant="primary"
                 size="sm"
+                :disabled="!canAddGameAccount"
+                :title="addAccountDisabledReason"
                 @click="openAddModal"
               >
                 <span class="i-carbon-add mr-2" />
@@ -1519,9 +1629,13 @@ async function handleResetSystemConfig() {
             <p class="mb-4 text-gray-500">
               暂无账号
             </p>
+            <p v-if="addAccountDisabledReason" class="mb-4 text-sm text-amber-600 dark:text-amber-400">
+              {{ addAccountDisabledReason }}
+            </p>
             <BaseButton
               variant="text"
               size="sm"
+              :disabled="!canAddGameAccount"
               @click="openAddModal"
             >
               立即添加
@@ -1567,6 +1681,9 @@ async function handleResetSystemConfig() {
                       <span class="truncate text-xs text-gray-500 sm:text-sm">
                         {{ acc.uin || '未绑定' }}
                       </span>
+                      <span v-if="userStore.isAdmin && acc.ownerUsername" class="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] text-gray-600 dark:bg-gray-700 dark:text-gray-300">
+                        {{ acc.ownerUsername }}
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -1579,8 +1696,9 @@ async function handleResetSystemConfig() {
                     variant="secondary"
                     size="sm"
                     class="border rounded-full shadow-sm transition-all duration-500 ease-in-out sm:w-20 active:scale-95"
+                    :disabled="!acc.running && !canManageGameAccounts"
                     :class="acc.running ? 'border-red-200 bg-red-50 text-red-600 hover:bg-red-100 focus:ring-red-500 active:border-red-300 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400 dark:hover:bg-red-900/30 dark:focus:ring-red-500 dark:active:border-red-700' : 'border-green-200 bg-green-50 text-green-600 hover:bg-green-100 focus:ring-green-500 active:border-green-300 dark:border-green-800 dark:bg-green-900/20 dark:text-green-400 dark:hover:bg-green-900/30 dark:focus:ring-green-500 dark:active:border-green-700'"
-                    @click="toggleAccount(acc)"
+                    @click.stop="toggleAccount(acc)"
                   >
                     <span class="mr-1" :class="acc.running ? 'i-carbon-stop-filled' : 'i-carbon-play-filled'" />
                     {{ acc.running ? '停止' : '启动' }}
@@ -1929,6 +2047,138 @@ async function handleResetSystemConfig() {
           />
         </div>
 
+        <!-- 会员与卡密 -->
+        <div v-else-if="activeTab === 'membership'" class="space-y-4">
+          <h3 class="text-lg text-gray-900 font-bold dark:text-gray-100">
+            会员与卡密
+          </h3>
+
+          <div class="grid grid-cols-1 gap-4 xl:grid-cols-2">
+            <section class="farm-card rounded-lg p-4">
+              <div class="mb-4 flex items-start gap-3">
+                <div class="h-9 w-9 flex shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600 dark:bg-emerald-900/25 dark:text-emerald-400">
+                  <span class="i-carbon-user-certification text-xl" />
+                </div>
+                <div>
+                  <h4 class="text-base text-gray-900 font-bold dark:text-gray-100">
+                    当前权益
+                  </h4>
+                  <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                    查看会员到期时间和游戏账号槽位
+                  </p>
+                </div>
+              </div>
+              <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div class="rounded-lg border border-gray-200 p-3 dark:border-gray-700">
+                  <div class="text-xs text-gray-500">会员状态</div>
+                  <div class="mt-1 font-medium">
+                    {{ userStore.isAdmin ? '超级管理员' : (userStore.membershipActive ? '已开通' : '未开通/已过期') }}
+                  </div>
+                  <div class="mt-1 text-sm text-gray-500">
+                    {{ userStore.isAdmin ? '不受到期限制' : formatMembershipTime(userStore.membershipExpiresAt) }}
+                  </div>
+                </div>
+                <div class="rounded-lg border border-gray-200 p-3 dark:border-gray-700">
+                  <div class="text-xs text-gray-500">账号槽位</div>
+                  <div class="mt-1 font-medium">
+                    {{ userStore.isAdmin ? '不限' : `${userStore.slotUsed} / ${userStore.slotLimit}` }}
+                  </div>
+                  <div class="mt-1 text-sm text-gray-500">
+                    {{ userStore.isAdmin ? '管理员可管理全部游戏账号' : '额度卡密可增加槽位' }}
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section v-if="!userStore.isAdmin" class="farm-card rounded-lg p-4">
+              <div class="mb-4 flex items-start gap-3">
+                <div class="h-9 w-9 flex shrink-0 items-center justify-center rounded-lg bg-amber-50 text-amber-600 dark:bg-amber-900/25 dark:text-amber-400">
+                  <span class="i-carbon-ticket text-xl" />
+                </div>
+                <div>
+                  <h4 class="text-base text-gray-900 font-bold dark:text-gray-100">
+                    兑换卡密
+                  </h4>
+                  <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                    时间卡密延长会员，额度卡密增加槽位
+                  </p>
+                </div>
+              </div>
+              <div class="flex flex-col gap-3 sm:flex-row sm:items-end">
+                <div class="flex-1">
+                  <BaseInput v-model="cardCode" label="卡密" placeholder="请输入卡密" />
+                </div>
+                <BaseButton variant="primary" :loading="cardRedeeming" @click="handleRedeemCard">
+                  兑换
+                </BaseButton>
+              </div>
+            </section>
+          </div>
+
+          <section v-if="!userStore.isAdmin" class="farm-card rounded-lg p-4">
+            <h4 class="mb-3 text-base text-gray-900 font-bold dark:text-gray-100">
+              我的兑换记录
+            </h4>
+            <div v-if="myRedeems.length === 0" class="py-6 text-center text-sm text-gray-500">
+              暂无兑换记录
+            </div>
+            <div v-else class="overflow-auto">
+              <table class="min-w-full text-left text-sm">
+                <thead>
+                  <tr class="border-b text-gray-500">
+                    <th class="py-2 pr-3">卡密</th>
+                    <th class="py-2 pr-3">类型</th>
+                    <th class="py-2 pr-3">面值</th>
+                    <th class="py-2 pr-3">时间</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="item in myRedeems" :key="item.code + String(item.usedAt)" class="border-b border-gray-100 dark:border-gray-700">
+                    <td class="py-2 pr-3 font-mono">
+                      {{ item.code }}
+                    </td>
+                    <td class="py-2 pr-3">
+                      {{ redeemTypeLabel(item.type) }}
+                    </td>
+                    <td class="py-2 pr-3">
+                      {{ redeemValueLabel(item) }}
+                    </td>
+                    <td class="py-2 pr-3">
+                      {{ formatMembershipTime(item.usedAt) }}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <section class="farm-card rounded-lg p-4">
+            <div class="mb-4 flex items-start gap-3">
+              <div class="h-9 w-9 flex shrink-0 items-center justify-center rounded-lg bg-amber-50 text-amber-600 dark:bg-amber-900/25 dark:text-amber-400">
+                <span class="i-carbon-password text-xl" />
+              </div>
+              <div>
+                <h4 class="text-base text-gray-900 font-bold dark:text-gray-100">
+                  {{ userStore.isAdmin ? '修改管理员密码' : '修改登录密码' }}
+                </h4>
+                <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                  {{ userStore.isAdmin ? '更新后台管理登录凭据' : '修改后需要重新登录' }}
+                </p>
+              </div>
+            </div>
+            <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <BaseInput v-model="passwordForm.old" label="当前密码" type="password" placeholder="当前密码" />
+              <BaseInput v-model="passwordForm.new" label="新密码" type="password" :placeholder="userStore.isAdmin ? '至少 6 位' : '请输入新密码'" />
+              <BaseInput v-model="passwordForm.confirm" label="确认新密码" type="password" placeholder="再次输入新密码" />
+            </div>
+            <div class="mt-3 flex justify-end border-t pt-3 dark:border-gray-700">
+              <BaseButton variant="primary" size="sm" :loading="passwordSaving" @click="handleChangePassword">
+                {{ userStore.isAdmin ? '修改管理员密码' : '修改密码' }}
+              </BaseButton>
+            </div>
+          </section>
+        </div>
+
         <!-- 系统设置 -->
         <div v-else-if="activeTab === 'system'" class="space-y-4">
           <h3 class="text-lg text-gray-900 font-bold dark:text-gray-100">
@@ -2107,54 +2357,6 @@ async function handleResetSystemConfig() {
                     @click="handleSaveLoginSettings"
                   >
                     保存登录设置
-                  </BaseButton>
-                </div>
-              </section>
-
-              <section class="farm-card rounded-lg p-4">
-                <div class="mb-4 flex items-start gap-3">
-                  <div class="h-9 w-9 flex shrink-0 items-center justify-center rounded-lg bg-amber-50 text-amber-600 dark:bg-amber-900/25 dark:text-amber-400">
-                    <span class="i-carbon-password text-xl" />
-                  </div>
-                  <div>
-                    <h4 class="text-base text-gray-900 font-bold dark:text-gray-100">
-                      修改管理员密码
-                    </h4>
-                    <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
-                      更新后台管理登录凭据
-                    </p>
-                  </div>
-                </div>
-
-                <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                  <BaseInput
-                    v-model="passwordForm.old"
-                    label="当前密码"
-                    type="password"
-                    placeholder="当前管理员密码"
-                  />
-                  <BaseInput
-                    v-model="passwordForm.new"
-                    label="新密码"
-                    type="password"
-                    placeholder="至少 6 位"
-                  />
-                  <BaseInput
-                    v-model="passwordForm.confirm"
-                    label="确认新密码"
-                    type="password"
-                    placeholder="再次输入新密码"
-                  />
-                </div>
-
-                <div class="mt-3 flex items-center justify-end border-t pt-3 dark:border-gray-700">
-                  <BaseButton
-                    variant="primary"
-                    size="sm"
-                    :loading="passwordSaving"
-                    @click="handleChangePassword"
-                  >
-                    修改管理员密码
                   </BaseButton>
                 </div>
               </section>

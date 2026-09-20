@@ -15,6 +15,7 @@ const { createModuleLogger } = require('../../services/logger');
 
 const { createAdminContext } = require('./context');
 const { mountAuthRoutes } = require('./auth-routes');
+const { mountUserCardkeyRoutes } = require('./user-cardkey-routes');
 const { mountAccountRoutes } = require('./account-routes');
 const { mountFarmRoutes } = require('./farm-routes');
 const { mountFriendRoutes } = require('./friend-routes');
@@ -45,18 +46,17 @@ function startAdminServer(dataProvider: any): void {
     ctx.app = app;
 
     app.use((req: any, res: any, next: any) => {
-        const allowedOrigins: string[] = CONFIG.ALLOWED_ORIGINS || ['http://localhost:5173', 'http://localhost:3000', 'http://127.0.0.1:5173'];
-        const origin = req.headers.origin;
-
-        if (origin && allowedOrigins.includes(origin)) {
+        const origin = String(req.headers.origin || '').trim();
+        if (origin) {
             res.header('Access-Control-Allow-Origin', origin);
-        } else if (!origin) {
+            res.header('Vary', 'Origin');
+            res.header('Access-Control-Allow-Credentials', 'true');
+        } else {
             res.header('Access-Control-Allow-Origin', '*');
         }
 
-        res.header('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS, PUT');
+        res.header('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS, PUT');
         res.header('Access-Control-Allow-Headers', 'Content-Type, x-account-id, x-admin-token, x-proxy-api-key, x-proxy-api-url, x-proxy-app-id');
-        res.header('Access-Control-Allow-Credentials', 'true');
         res.header('Access-Control-Max-Age', '86400');
 
         if (req.method === 'OPTIONS') return res.sendStatus(200);
@@ -74,6 +74,7 @@ function startAdminServer(dataProvider: any): void {
 
     // Mount route modules
     mountAuthRoutes(app, ctx);
+    mountUserCardkeyRoutes(app, ctx);
     mountWxLoginRoutes(app, ctx);
     mountQqLoginRoutes(app, ctx);
     mountFarmRoutes(app, ctx);

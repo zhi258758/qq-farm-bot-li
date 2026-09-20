@@ -1,25 +1,38 @@
 import type { Account, AccountsData } from '../../types/account';
 export {};
 
-const fs = require('node:fs');
-const { ensureDataDir } = require('../../config/runtime-paths');
+const { getDataFile, ensureDataDir } = require('../../config/runtime-paths');
 const { readJsonFile, writeJsonFileAtomic } = require('../../services/json-db');
 
-const { ACCOUNTS_FILE } = require('./shared-state');
+function accountsFile(): string {
+    return getDataFile('accounts.json');
+}
 
 function loadAccounts(): AccountsData {
     ensureDataDir();
-    const data = readJsonFile(ACCOUNTS_FILE, () => ({ accounts: [], nextId: 1 }));
+    const data = readJsonFile(accountsFile(), () => ({ accounts: [], nextId: 1 }));
     return normalizeAccountsData(data);
 }
 
 function saveAccounts(data: AccountsData): void {
     ensureDataDir();
-    writeJsonFileAtomic(ACCOUNTS_FILE, normalizeAccountsData(data));
+    writeJsonFileAtomic(accountsFile(), normalizeAccountsData(data));
 }
 
 function getAccounts(): AccountsData {
     return loadAccounts();
+}
+
+function countOwnedAccounts(ownerUserId: string): number {
+    const owner = String(ownerUserId || '').trim();
+    if (!owner) return 0;
+    return loadAccounts().accounts.filter(account => String(account.ownerUserId || 'admin') === owner).length;
+}
+
+function filterAccountsByOwner(accounts: Account[], ownerUserId: string): Account[] {
+    const owner = String(ownerUserId || '').trim();
+    if (!owner) return [];
+    return accounts.filter(account => String(account.ownerUserId || 'admin') === owner);
 }
 
 function normalizeAccountsData(raw: unknown): AccountsData {
@@ -43,6 +56,7 @@ function normalizeAccount(raw: any): Account {
         uin: String(source.uin || ''),
         qq: String(source.qq || source.uin || ''),
         avatar: String(source.avatar || source.avatarUrl || ''),
+        ownerUserId: String(source.ownerUserId || 'admin').trim() || 'admin',
         createdAt: Number(source.createdAt) || Date.now(),
         updatedAt: Number(source.updatedAt) || Date.now(),
     };
@@ -57,7 +71,7 @@ function addOrUpdateAccount(acc: Partial<Account> & { avatarUrl?: string }): Acc
     let touchedAccountId = '';
     const source: any = acc || {};
     const cleanAccount: any = {};
-    for (const key of ['id', 'name', 'code', 'platform', 'uin', 'qq', 'avatar', 'avatarUrl', 'nick']) {
+    for (const key of ['id', 'name', 'code', 'platform', 'uin', 'qq', 'avatar', 'avatarUrl', 'nick', 'ownerUserId']) {
         if (source[key] !== undefined) cleanAccount[key] = source[key];
     }
     acc = cleanAccount;
@@ -78,6 +92,7 @@ function addOrUpdateAccount(acc: Partial<Account> & { avatarUrl?: string }): Acc
             uin: acc.uin ? String(acc.uin) : '',
             qq: acc.qq ? String(acc.qq) : (acc.uin ? String(acc.uin) : ''),
             avatar: acc.avatar || acc.avatarUrl || '',
+            ownerUserId: String(acc.ownerUserId || 'admin').trim() || 'admin',
             createdAt: Date.now(),
             updatedAt: Date.now(),
         });
@@ -108,4 +123,6 @@ module.exports = {
     normalizeAccountsData,
     addOrUpdateAccount,
     deleteAccount,
+    countOwnedAccounts,
+    filterAccountsByOwner,
 };

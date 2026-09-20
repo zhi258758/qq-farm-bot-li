@@ -8,6 +8,7 @@ export interface Account {
   qq: string;
   avatar: string;
   nick?: string;
+  ownerUserId?: string;
   createdAt: number;
   updatedAt: number;
 }

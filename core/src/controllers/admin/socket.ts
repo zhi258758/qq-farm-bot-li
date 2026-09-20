@@ -13,7 +13,13 @@ const {
 
 function applySocketSubscription(ctx: AdminContext, socket: any, accountRef: string = ''): void {
     const incoming = String(accountRef || '').trim();
-    const resolved = incoming && incoming !== 'all' ? resolveAccId(ctx, incoming) : '';
+    const auth = socket.data.auth || null;
+    if (auth?.role === 'user' && (!incoming || incoming === 'all')) {
+        socket.emit('subscribed', { accountId: '' });
+        return;
+    }
+    const fakeReq = { auth } as any;
+    const resolved = incoming && incoming !== 'all' ? resolveAccId(ctx, incoming, fakeReq) : '';
 
     for (const room of socket.rooms) {
         if (room.startsWith('account:')) socket.leave(room);
@@ -73,10 +79,13 @@ function setupSocketIO(ctx: AdminContext): void {
             ? String(socket.handshake.headers['x-admin-token'])
             : '';
         const token = authToken || headerToken;
-        if (!token || !ctx.tokens.has(token)) {
+        const { getSession } = require('./middleware');
+        const session = getSession(ctx, token);
+        if (!session) {
             return next(new Error('Unauthorized'));
         }
         socket.data.adminToken = token;
+        socket.data.auth = session;
         return next();
     });
 

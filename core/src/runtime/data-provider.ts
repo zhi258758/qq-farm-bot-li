@@ -402,6 +402,13 @@ function createDataProvider(options: DataProviderOptions) {
             const accountId = resolveAccountRefId(accountRef);
             const acc = findAccountByAnyRef(accountId || accountRef);
             if (!acc) return false;
+            const membershipGuard = require('../services/membership-guard');
+            const startCheck = membershipGuard.canStartGameAccount(acc);
+            if (!startCheck.ok) {
+                const err: any = new Error(startCheck.error || '会员已过期，请兑换时间卡密');
+                err.status = startCheck.status || 403;
+                throw err;
+            }
             startWorker(acc);
             return true;
         },
@@ -418,6 +425,14 @@ function createDataProvider(options: DataProviderOptions) {
             const accountId = resolveAccountRefId(accountRef);
             const acc = findAccountByAnyRef(accountId || accountRef);
             if (!acc) return false;
+            const membershipGuard = require('../services/membership-guard');
+            const startCheck = membershipGuard.canStartGameAccount(acc);
+            if (!startCheck.ok) {
+                stopWorker(accountId);
+                const err: any = new Error(startCheck.error || '会员已过期，请兑换时间卡密');
+                err.status = startCheck.status || 403;
+                throw err;
+            }
             restartWorker(acc);
             return true;
         },

@@ -3,22 +3,30 @@ import { defineStore } from 'pinia'
 import { computed } from 'vue'
 import api, { getApiErrorMessage } from '@/api'
 
+export type UserRole = 'admin' | 'user'
+
 export interface AdminInfo {
+  id?: string
   username: string
-  role: 'admin'
+  role: UserRole
   avatar?: string
   mustChangePassword?: boolean
+  enabled?: boolean
+  membershipExpiresAt?: number | null
+  membershipActive?: boolean
+  slotLimit?: number
+  slotUsed?: number
 }
 
 export interface LoginResult {
   ok: boolean
   error?: string
-  errorType?: 'rate_limit' | 'locked' | 'invalid_credentials'
+  errorType?: 'rate_limit' | 'locked' | 'invalid_credentials' | 'disabled'
   remainingMs?: number
   data?: {
     token: string
-    role: 'admin'
-    user: { username: string }
+    role: UserRole
+    user: AdminInfo
     mustChangePassword?: boolean
   }
 }
@@ -29,18 +37,43 @@ export const useUserStore = defineStore('user', () => {
   const isLoggedIn = computed(() => !!token.value)
   const username = computed(() => userInfo.value?.username || '')
   const avatar = computed(() => userInfo.value?.avatar || '')
+  const role = computed<UserRole>(() => userInfo.value?.role || 'user')
+  const isAdmin = computed(() => role.value === 'admin')
+  const membershipActive = computed(() => isAdmin.value || userInfo.value?.membershipActive === true)
+  const membershipExpiresAt = computed(() => userInfo.value?.membershipExpiresAt ?? null)
+  const slotLimit = computed(() => Number(userInfo.value?.slotLimit || 0))
+  const slotUsed = computed(() => Number(userInfo.value?.slotUsed || 0))
+
+  function applySession(payload: any) {
+    const nextRole: UserRole = payload?.role === 'admin' ? 'admin' : 'user'
+    const user = payload?.user || {}
+    if (payload?.token)
+      token.value = payload.token
+    userInfo.value = {
+      ...userInfo.value,
+      id: user.id ?? userInfo.value?.id,
+      username: user.username || userInfo.value?.username || '',
+      role: nextRole,
+      mustChangePassword: payload.mustChangePassword,
+      enabled: user.enabled,
+      membershipExpiresAt: Object.prototype.hasOwnProperty.call(user, 'membershipExpiresAt')
+        ? (user.membershipExpiresAt ?? null)
+        : (nextRole === 'admin' ? userInfo.value?.membershipExpiresAt ?? null : null),
+      membershipActive: nextRole === 'admin' ? true : user.membershipActive === true,
+      slotLimit: user.slotLimit ?? userInfo.value?.slotLimit,
+      slotUsed: user.slotUsed ?? userInfo.value?.slotUsed,
+    }
+  }
+
+  function applyAuthPayload(payload: any) {
+    applySession(payload)
+  }
 
   async function login(username: string, password: string): Promise<LoginResult> {
     try {
       const res = await api.post('/api/login', { username, password })
-      if (res.data.ok) {
-        token.value = res.data.data.token
-        userInfo.value = {
-          username: res.data.data.user.username,
-          role: 'admin',
-          mustChangePassword: res.data.data.mustChangePassword,
-        }
-      }
+      if (res.data.ok)
+        applyAuthPayload(res.data.data)
       return res.data
     }
     catch (error: any) {
@@ -48,6 +81,21 @@ export const useUserStore = defineStore('user', () => {
       return data
         ? { ok: false, error: getApiErrorMessage(data, '网络错误'), errorType: data.errorType, remainingMs: data.remainingMs }
         : { ok: false, error: getApiErrorMessage(error, '网络错误') }
+    }
+  }
+
+  async function register(username: string, password: string): Promise<LoginResult> {
+    try {
+      const res = await api.post('/api/register', { username, password })
+      if (res.data.ok)
+        applyAuthPayload(res.data.data)
+      return res.data
+    }
+    catch (error: any) {
+      const data = error.response?.data
+      return data
+        ? { ok: false, error: getApiErrorMessage(data, '注册失败') }
+        : { ok: false, error: getApiErrorMessage(error, '注册失败') }
     }
   }
 
@@ -64,8 +112,15 @@ export const useUserStore = defineStore('user', () => {
   async function fetchUserInfo() {
     try {
       const res = await api.get('/api/user/me')
-      if (res.data.ok)
-        userInfo.value = res.data.data
+      if (res.data.ok) {
+        const data = res.data.data || {}
+        userInfo.value = {
+          ...userInfo.value,
+          ...data,
+          role: data.role === 'admin' ? 'admin' : 'user',
+          membershipActive: data.role === 'admin' ? true : data.membershipActive === true,
+        }
+      }
       return res.data
     }
     catch {
@@ -78,15 +133,43 @@ export const useUserStore = defineStore('user', () => {
     return res.data
   }
 
+  async function redeemCardKey(code: string) {
+    const res = await api.post('/api/cardkeys/redeem', { code })
+    if (res.data.ok && res.data.data?.user) {
+      userInfo.value = {
+        ...userInfo.value,
+        ...res.data.data.user,
+        role: 'user',
+        membershipActive: res.data.data.user.membershipActive === true,
+      }
+    }
+    return res.data
+  }
+
+  async function fetchMyRedeems() {
+    const res = await api.get('/api/cardkeys/my-redeems')
+    return res.data
+  }
+
   return {
     token,
     userInfo,
     isLoggedIn,
     username,
     avatar,
+    role,
+    isAdmin,
+    membershipActive,
+    membershipExpiresAt,
+    slotLimit,
+    slotUsed,
+    applySession,
     login,
+    register,
     logout,
     fetchUserInfo,
     changePassword,
+    redeemCardKey,
+    fetchMyRedeems,
   }
 })

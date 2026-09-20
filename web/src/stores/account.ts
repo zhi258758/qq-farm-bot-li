@@ -11,7 +11,8 @@ export interface Account {
   avatar?: string
   platform?: string
   running?: boolean
-  // Add other fields as discovered
+  ownerUserId?: string
+  ownerUsername?: string
 }
 
 export interface AccountLog {

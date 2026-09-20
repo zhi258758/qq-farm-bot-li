@@ -17,6 +17,8 @@ const success = ref('')
 const loading = ref(false)
 const lockoutRemaining = ref(0)
 const rateLimitRemaining = ref(0)
+const mode = ref<'login' | 'register'>('login')
+const registrationEnabled = ref(false)
 
 const usernameValid = computed(() => {
   const name = username.value
@@ -56,12 +58,19 @@ async function handleSubmit() {
   success.value = ''
 
   try {
-    const result = await userStore.login(username.value, password.value)
+    const result = mode.value === 'register'
+      ? await userStore.register(username.value, password.value)
+      : await userStore.login(username.value, password.value)
     if (result.ok) {
       if (result.data?.mustChangePassword)
         success.value = '登录成功，请修改默认密码'
+      else if (mode.value === 'register')
+        success.value = '注册成功'
       setTimeout(() => {
-        window.location.href = '/'
+        const next = userStore.isAdmin || userStore.membershipActive
+          ? '/'
+          : '/settings?tab=membership'
+        window.location.href = next
       }, 500)
     }
     else if (result.errorType === 'rate_limit') {
@@ -75,7 +84,7 @@ async function handleSubmit() {
         lockoutRemaining.value = Math.ceil(result.remainingMs / 1000 / 60)
     }
     else {
-      error.value = result.error || '登录失败'
+      error.value = result.error || (mode.value === 'register' ? '注册失败' : '登录失败')
     }
   }
   catch (e: any) {
@@ -110,7 +119,21 @@ async function fetchGameVersion() {
   }
 }
 
-onMounted(fetchGameVersion)
+async function fetchAuthConfig() {
+  try {
+    const res = await api.get('/api/public/auth-config')
+    if (res.data.ok)
+      registrationEnabled.value = res.data.data?.registrationEnabled === true
+  }
+  catch {
+    registrationEnabled.value = false
+  }
+}
+
+onMounted(() => {
+  fetchGameVersion()
+  fetchAuthConfig()
+})
 </script>
 
 <template>
@@ -126,7 +149,7 @@ onMounted(fetchGameVersion)
             QQ农场智能助手
           </h1>
           <p class="logo-subtitle">
-            超级管理员登录
+            {{ mode === 'register' ? '创建面板账号' : '登录面板' }}
           </p>
         </div>
       </header>
@@ -180,10 +203,18 @@ onMounted(fetchGameVersion)
 
         <BaseButton type="submit" variant="primary" block :loading="loading" class="submit-btn">
           <span v-if="!loading" class="inline-flex items-center gap-2">
-            <span class="i-carbon-login" />
-            登录
+            <span :class="mode === 'register' ? 'i-carbon-user-follow' : 'i-carbon-login'" />
+            {{ mode === 'register' ? '注册' : '登录' }}
           </span>
         </BaseButton>
+        <button
+          v-if="registrationEnabled"
+          type="button"
+          class="mode-switch"
+          @click="mode = mode === 'login' ? 'register' : 'login'; error = ''; success = ''"
+        >
+          {{ mode === 'login' ? '没有账号？去注册' : '已有账号？去登录' }}
+        </button>
       </form>
 
       <footer class="card-footer">
@@ -356,6 +387,16 @@ onMounted(fetchGameVersion)
 
 .submit-btn {
   margin-top: 2px;
+}
+
+.mode-switch {
+  margin-top: 12px;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: var(--ui-primary);
+  font-size: 13px;
+  cursor: pointer;
 }
 
 .card-footer {

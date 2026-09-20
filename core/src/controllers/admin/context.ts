@@ -8,8 +8,17 @@ export {};
  * Creates and holds all shared state for the admin server.
  */
 
+export interface SessionRecord {
+    token: string;
+    role: 'admin' | 'user';
+    userId: string;
+    username: string;
+    createdAt: number;
+}
+
 export interface AdminContext {
     tokens: Set<string>;
+    sessions: Map<string, SessionRecord>;
     app: Application | null;
     server: Server | null;
     io: SocketIOServer | null;
@@ -17,9 +26,9 @@ export interface AdminContext {
 }
 
 function createAdminContext(dataProvider: any): AdminContext {
-    const tokens = new Set<string>();
     return {
-        tokens,
+        tokens: new Set<string>(),
+        sessions: new Map<string, SessionRecord>(),
         app: null,
         server: null,
         io: null,

@@ -11,12 +11,17 @@ const { addOrUpdateAccount, deleteAccount } = store;
 const { findAccountByRef } = require('../../services/account-resolver');
 const { updateRuntimeConfig, getRuntimeConfig, getDefaultSystemConfig, getDevicePresets, getTimeZoneOptions } = require('../../config/config');
 
+const membershipGuard = require('../../services/membership-guard');
+const userStore = require('../../models/user-store');
+
 const {
     getAccId,
     getAccountIds,
     handleApiError,
     getAccountList,
     resolveAccId,
+    getRequestAuth,
+    isAdminRequest,
 } = require('./middleware');
 
 function mountAccountRoutes(app: Application, ctx: AdminContext): void {
@@ -25,7 +30,22 @@ function mountAccountRoutes(app: Application, ctx: AdminContext): void {
     app.get('/api/accounts', (req: Request, res: Response) => {
         try {
             const data = ctx.provider.getAccounts();
-            res.json({ ok: true, data });
+            const accounts = getAccountList(ctx, req);
+            const users = isAdminRequest(req)
+                ? Object.fromEntries(userStore.listUsers().map((user: any) => [user.id, user.username]))
+                : {};
+            res.json({
+                ok: true,
+                data: {
+                    ...data,
+                    accounts: accounts.map((account: any) => ({
+                        ...account,
+                        ownerUsername: account.ownerUserId === userStore.ADMIN_OWNER_ID
+                            ? '管理员'
+                            : (users[account.ownerUserId] || account.ownerUserId || '管理员'),
+                    })),
+                },
+            });
         } catch (e: any) {
             handleApiError(res, e);
         }
@@ -36,7 +56,7 @@ function mountAccountRoutes(app: Application, ctx: AdminContext): void {
         try {
             const body = (req.body && typeof req.body === 'object') ? req.body : {};
             const rawRef = body.id || body.accountId || body.uin || req.headers['x-account-id'];
-            const accountList = getAccountList(ctx);
+            const accountList = getAccountList(ctx, req);
             const target = findAccountByRef(accountList, rawRef);
             if (!target || !target.id) {
                 return res.status(404).json({ ok: false, error: 'Account not found' });
@@ -69,7 +89,7 @@ function mountAccountRoutes(app: Application, ctx: AdminContext): void {
             if (!requestedName) {
                 return res.status(400).json({ ok: false, error: '账号备注不能为空' });
             }
-            const visibleAccounts = getAccountList(ctx);
+            const visibleAccounts = getAccountList(ctx, req);
             const remarkMatchedAccount = !body.id && requestedName
                 ? visibleAccounts.find((account: any) => String(account.name || '').trim() === requestedName)
                 : null;
@@ -77,8 +97,20 @@ function mountAccountRoutes(app: Application, ctx: AdminContext): void {
             const updateRef = body.id || (remarkMatchedAccount && remarkMatchedAccount.id) || '';
             const isUpdate = !!updateRef;
 
-            const resolvedUpdateId = isUpdate ? resolveAccId(ctx, updateRef) : '';
-            const payload = isUpdate ? { ...body, id: resolvedUpdateId || String(updateRef) } : body;
+            const resolvedUpdateId = isUpdate ? resolveAccId(ctx, updateRef, req) : '';
+            const auth = getRequestAuth(req);
+            const ownerUserId = auth?.role === 'user' ? auth.userId : userStore.ADMIN_OWNER_ID;
+            if (!isUpdate) {
+                const slotCheck = membershipGuard.canCreateGameAccount(ownerUserId);
+                if (!slotCheck.ok) {
+                    return res.status(slotCheck.status || 400).json({ ok: false, error: slotCheck.error });
+                }
+            } else if (!resolvedUpdateId && auth?.role === 'user') {
+                return res.status(404).json({ ok: false, error: 'Account not found' });
+            }
+            const payload = isUpdate
+                ? { ...body, id: resolvedUpdateId || String(updateRef) }
+                : { ...body, ownerUserId };
             let wasRunning = false;
             if (isUpdate && ctx.provider.isAccountRunning) {
                 wasRunning = ctx.provider.isAccountRunning(payload.id);
@@ -123,7 +155,8 @@ function mountAccountRoutes(app: Application, ctx: AdminContext): void {
                 // 如果是更新，且之前在运行，且不是仅修改备注，则重启
                 ctx.provider.restartAccount(payload.id);
             }
-            res.json({ ok: true, data });
+            const visible = getAccountList(ctx, req);
+            res.json({ ok: true, data: { ...data, accounts: visible } });
         } catch (e: any) {
             handleApiError(res, e);
         }
@@ -131,7 +164,10 @@ function mountAccountRoutes(app: Application, ctx: AdminContext): void {
 
     app.delete('/api/accounts/:id', (req: Request, res: Response) => {
         try {
-            const resolvedId = resolveAccId(ctx, req.params.id) || String(req.params.id || '');
+            const resolvedId = resolveAccId(ctx, req.params.id, req) || String(req.params.id || '');
+            if (getRequestAuth(req)?.role === 'user' && !getAccountList(ctx, req).some((account: any) => String(account.id) === resolvedId)) {
+                return res.status(404).json({ ok: false, error: 'Account not found' });
+            }
 
             const before = ctx.provider.getAccounts();
             const target = findAccountByRef(before.accounts || [], req.params.id);
@@ -163,10 +199,10 @@ function mountAccountRoutes(app: Application, ctx: AdminContext): void {
     // API: 日志
     app.get('/api/logs', (req: Request, res: Response) => {
         const queryAccountIdRaw = (req.query.accountId || '').toString().trim();
-        const id = queryAccountIdRaw ? (queryAccountIdRaw === 'all' ? '' : resolveAccId(ctx, queryAccountIdRaw)) : getAccId(ctx, req);
+        const id = queryAccountIdRaw ? (queryAccountIdRaw === 'all' ? '' : resolveAccId(ctx, queryAccountIdRaw, req)) : getAccId(ctx, req);
         // 如果没有指定账号ID，获取所有账号的日志
         if (!id) {
-            const accountIds = getAccountIds(ctx);
+            const accountIds = getAccountIds(ctx, req);
             const allLogs: any[] = [];
             const options = {
                 limit: Number.parseInt(req.query.limit as string) || 100,
@@ -263,7 +299,10 @@ function mountAccountRoutes(app: Application, ctx: AdminContext): void {
     });
 
     // API: 设置面板主题
-    app.post('/api/settings/theme', async (req: Request, res: Response) => {
+    app.post('/api/settings/theme', (req: Request, res: Response, next: any) => {
+        if (!isAdminRequest(req)) return res.status(403).json({ ok: false, error: '需要管理员权限' });
+        next();
+    }, async (req: Request, res: Response) => {
         try {
             const theme = String((req.body || {}).theme || '');
             const data = await ctx.provider.setUITheme(theme);
@@ -274,7 +313,10 @@ function mountAccountRoutes(app: Application, ctx: AdminContext): void {
     });
 
     // API: 保存下线提醒配置
-    app.post('/api/settings/offline-reminder', async (req: Request, res: Response) => {
+    app.post('/api/settings/offline-reminder', (req: Request, res: Response, next: any) => {
+        if (!isAdminRequest(req)) return res.status(403).json({ ok: false, error: '需要管理员权限' });
+        next();
+    }, async (req: Request, res: Response) => {
         try {
             const body = (req.body && typeof req.body === 'object') ? req.body : {};
             const channel = String(body.channel || '').trim().toLowerCase();
@@ -294,7 +336,10 @@ function mountAccountRoutes(app: Application, ctx: AdminContext): void {
     });
 
     // API: 测试下线提醒推送（不落盘）
-    app.post('/api/settings/offline-reminder/test', async (req: Request, res: Response) => {
+    app.post('/api/settings/offline-reminder/test', (req: Request, res: Response, next: any) => {
+        if (!isAdminRequest(req)) return res.status(403).json({ ok: false, error: '需要管理员权限' });
+        next();
+    }, async (req: Request, res: Response) => {
         try {
             const saved = store.getOfflineReminder ? store.getOfflineReminder() : {};
             const body = (req.body && typeof req.body === 'object') ? req.body : {};
@@ -409,7 +454,8 @@ function mountAccountRoutes(app: Application, ctx: AdminContext): void {
         }
     });
 
-    app.get('/api/settings/system-config', (_req: Request, res: Response) => {
+    app.get('/api/settings/system-config', (req: Request, res: Response) => {
+        if (!isAdminRequest(req)) return res.status(403).json({ ok: false, error: '需要管理员权限' });
         try {
             res.json({
                 ok: true,
@@ -440,6 +486,7 @@ function mountAccountRoutes(app: Application, ctx: AdminContext): void {
     });
 
     app.post('/api/settings/login-config', (req: Request, res: Response) => {
+        if (!isAdminRequest(req)) return res.status(403).json({ ok: false, error: '需要管理员权限' });
         try {
             const body = (req.body && typeof req.body === 'object') ? req.body : {};
             const loginSettings = store.setLoginSettings
@@ -457,6 +504,7 @@ function mountAccountRoutes(app: Application, ctx: AdminContext): void {
     });
 
     app.post('/api/settings/system-config', (req: Request, res: Response) => {
+        if (!isAdminRequest(req)) return res.status(403).json({ ok: false, error: '需要管理员权限' });
         try {
             const { serverUrl, clientVersion, platform, os, timeZone, deviceInfo } = req.body || {};
             const previous = getRuntimeConfig();
@@ -485,7 +533,8 @@ function mountAccountRoutes(app: Application, ctx: AdminContext): void {
         }
     });
 
-    app.post('/api/settings/system-config/reset', (_req: Request, res: Response) => {
+    app.post('/api/settings/system-config/reset', (req: Request, res: Response) => {
+        if (!isAdminRequest(req)) return res.status(403).json({ ok: false, error: '需要管理员权限' });
         try {
             const previous = getRuntimeConfig();
             const saved = getDefaultSystemConfig();
