@@ -193,6 +193,33 @@ NPM_REGISTRY=https://registry.npmmirror.com/
 
 如需显式指定基础镜像或 pnpm 版本，也可以配置 `NODE_IMAGE` 和 `PNPM_VERSION`。修改构建参数或排查旧缓存问题时请执行 `docker compose build --pull --no-cache`，确保重新拉取基础镜像并安装依赖。
 
+### QQ/NapCat 扫码登录（Docker，可选）
+
+NapCat 默认不启动，普通使用继续执行 `docker compose up -d --build` 即可。
+
+需要 QQ 扫码登录时，先复制示例配置：
+
+```bash
+cp .env.compose.example .env
+```
+
+在 `.env` 中设置：
+
+```dotenv
+COMPOSE_PROFILES=napcat
+NAPCAT_LOGIN_ENABLED=true
+```
+
+然后执行：
+
+```bash
+./compose.sh up -d --build
+```
+
+脚本会读取宿主机名作为 QQ 登录设备名，并由 Compose 同时启动农场和 NapCat 两个服务。构建 NapCat 派生镜像时会自动安装 OpenAuth 插件；NapCat 容器首次启动会生成内部随机 Token，通过只读文件 `/app/napcat-auth/token` 提供给农场后端，无需把密钥写入环境变量。NapCat 的配置、Token 和 QQ 登录数据保存在 `../data/napcat/`。需要覆盖设备名时可在 `.env` 中设置 `NAPCAT_DEVICE_NAME`。
+
+更新农场或插件代码后仍使用同一条 `./compose.sh up -d --build` 重建即可。
+
 ### 二进制发布版
 
 可从 [Releases](https://github.com/liyangpengs/qq-farm-bot/releases) 下载对应平台文件，也可以自行构建：
@@ -215,14 +242,14 @@ chmod +x ./qq-farm-bot
 
 1. 打开 Web 面板，使用 `admin` / `admin` 登录。
 2. 进入“设置 → 系统设置”修改管理员密码。
-3. 如需使用 QQ 扫码登录，先部署并启动 [qq-miniapp-auth](https://github.com/liyangpengs/qq-miniapp-auth) 服务，再在“设置 → 系统设置 → 登录设置”开启 QQ 扫码登录，并填写 NapCat 接口地址和接口签名。
+3. 如需使用 QQ 扫码登录，按「QQ/NapCat 扫码登录（Docker，可选）」启动 NapCat，并在 `.env` 中设置 `COMPOSE_PROFILES=napcat` 与 `NAPCAT_LOGIN_ENABLED=true`。
 4. 在设置页添加游戏账号，可使用有效 Code、微信扫码或 QQ扫码登录。
 5. 为账号配置种植、自动化和好友策略，并按需设置实例级下线提醒。
 6. 启动账号，在概览页确认连接状态、农场数据和实时日志。
 
 Code 具有时效性；登录失败时应先重新获取 Code 或重新扫码。QQ 客户端被挤下线后，官方“重新登录”会签发新的 Code；可启动 QQFarmCodeHelper 的标准获取模式并开启自动同步，再点击官方“重新登录”，Helper 会更新匹配账号的 Code 并重新启动远程账号。协议监听模式只落盘抓包，永远不会自动上传 Code。
 
-QQ 扫码登录依赖外部 [qq-miniapp-auth](https://github.com/liyangpengs/qq-miniapp-auth) 服务。登录设置中的 NapCat 接口地址需填写该服务的可访问地址，NapCat 接口签名需与其 `API_SIGNING_SECRET` 配置一致；两者会保存在本机数据目录中，由后端调用外部服务时读取。QQ 扫码登录默认关闭，开启前必须同时配置接口地址和签名。
+QQ 扫码登录基于内置 NapCat 服务，配置全部来自环境变量，面板中不再提供开关。启用后打开「添加账号」，「QQ扫码登录」标签会出现；没有出现时依次检查 `NAPCAT_LOGIN_ENABLED=true`、`docker compose --profile napcat ps` 中 NapCat 是否运行、以及 `../data/napcat/auth/token` 是否已生成。
 
 ## 配置说明
 
