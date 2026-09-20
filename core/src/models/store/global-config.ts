@@ -117,9 +117,6 @@ function normalizeLoginSettings(input: unknown): LoginSettings {
     const src: Record<string, any> = (input && typeof input === 'object') ? input as Record<string, any> : {};
     return {
         wechatQrLogin: typeof src.wechatQrLogin === 'boolean' ? src.wechatQrLogin : DEFAULT_LOGIN_SETTINGS.wechatQrLogin,
-        qqQrLogin: typeof src.qqQrLogin === 'boolean' ? src.qqQrLogin : DEFAULT_LOGIN_SETTINGS.qqQrLogin,
-        napCatEndpoint: typeof src.napCatEndpoint === 'string' ? src.napCatEndpoint.trim() : DEFAULT_LOGIN_SETTINGS.napCatEndpoint,
-        napCatSignature: typeof src.napCatSignature === 'string' ? src.napCatSignature.trim() : DEFAULT_LOGIN_SETTINGS.napCatSignature,
     };
 }
 
@@ -129,9 +126,6 @@ function getLoginSettings(): LoginSettings {
 
 function setLoginSettings(cfg: Partial<LoginSettings> | undefined): LoginSettings {
     const next = normalizeLoginSettings({ ...getLoginSettings(), ...(cfg || {}) });
-    if (next.qqQrLogin && (!next.napCatEndpoint || !next.napCatSignature)) {
-        throw new Error('开启 QQ 扫码登录前，请配置 NapCat 接口地址和接口签名');
-    }
     globalConfig.loginSettings = next;
     saveGlobalConfig();
     return getLoginSettings();

@@ -22,7 +22,7 @@ const { mountFriendRoutes } = require('./friend-routes');
 const { mountActivityCenterRoutes } = require('./activity-center-routes');
 const { mountCommerceRoutes } = require('./commerce-routes');
 const { mountWxLoginRoutes } = require('./wx-login-routes');
-const { mountQqLoginRoutes } = require('./qq-login-routes');
+const { mountNapcatLoginRoutes } = require('./napcat-login-routes');
 const { mountCaptureRoutes } = require('./capture-routes');
 const {
     setupSocketIO,
@@ -78,7 +78,7 @@ function startAdminServer(dataProvider: any): void {
     mountUserCardkeyRoutes(app, ctx);
     mountCaptureRoutes(app, ctx);
     mountWxLoginRoutes(app, ctx);
-    mountQqLoginRoutes(app, ctx);
+    mountNapcatLoginRoutes(app, ctx);
     mountFarmRoutes(app, ctx);
     mountFriendRoutes(app, ctx);
     mountAccountRoutes(app, ctx);

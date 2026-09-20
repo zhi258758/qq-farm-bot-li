@@ -466,7 +466,7 @@ function mountAccountRoutes(app: Application, ctx: AdminContext): void {
                     timeZones: getTimeZoneOptions(),
                     loginSettings: store.getLoginSettings
                         ? store.getLoginSettings()
-                        : { wechatQrLogin: true, qqQrLogin: false, napCatEndpoint: '', napCatSignature: '' },
+                        : { wechatQrLogin: true },
                 },
             });
         } catch (e: any) {
@@ -478,7 +478,7 @@ function mountAccountRoutes(app: Application, ctx: AdminContext): void {
         try {
             const loginSettings = store.getLoginSettings
                 ? store.getLoginSettings()
-                : { wechatQrLogin: true, qqQrLogin: false, napCatEndpoint: '', napCatSignature: '' };
+                : { wechatQrLogin: true };
             res.json({ ok: true, data: loginSettings });
         } catch (e: any) {
             handleApiError(res, e);
@@ -492,11 +492,8 @@ function mountAccountRoutes(app: Application, ctx: AdminContext): void {
             const loginSettings = store.setLoginSettings
                 ? store.setLoginSettings({
                     wechatQrLogin: body.wechatQrLogin,
-                    qqQrLogin: body.qqQrLogin,
-                    napCatEndpoint: body.napCatEndpoint,
-                    napCatSignature: body.napCatSignature,
                 })
-                : { wechatQrLogin: true, qqQrLogin: false, napCatEndpoint: '', napCatSignature: '' };
+                : { wechatQrLogin: true };
             res.json({ ok: true, data: loginSettings });
         } catch (e: any) {
             handleApiError(res, e);

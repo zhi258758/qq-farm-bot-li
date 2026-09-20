@@ -38,9 +38,6 @@ const DEFAULT_OFFLINE_REMINDER: OfflineReminder = {
 
 const DEFAULT_LOGIN_SETTINGS: LoginSettings = {
     wechatQrLogin: true,
-    qqQrLogin: false,
-    napCatEndpoint: '',
-    napCatSignature: '',
 };
 
 const DEFAULT_ACCOUNT_CONFIG: AccountConfig = {
@@ -550,15 +547,6 @@ function loadGlobalConfig(): void {
                     wechatQrLogin: typeof data.loginSettings.wechatQrLogin === 'boolean'
                         ? data.loginSettings.wechatQrLogin
                         : DEFAULT_LOGIN_SETTINGS.wechatQrLogin,
-                    qqQrLogin: typeof data.loginSettings.qqQrLogin === 'boolean'
-                        ? data.loginSettings.qqQrLogin
-                        : DEFAULT_LOGIN_SETTINGS.qqQrLogin,
-                    napCatEndpoint: typeof data.loginSettings.napCatEndpoint === 'string'
-                        ? data.loginSettings.napCatEndpoint.trim()
-                        : DEFAULT_LOGIN_SETTINGS.napCatEndpoint,
-                    napCatSignature: typeof data.loginSettings.napCatSignature === 'string'
-                        ? data.loginSettings.napCatSignature.trim()
-                        : DEFAULT_LOGIN_SETTINGS.napCatSignature,
                 };
             }
 

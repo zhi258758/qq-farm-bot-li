@@ -122,9 +122,6 @@ export interface UIConfig {
 
 export interface LoginSettings {
   wechatQrLogin: boolean;
-  qqQrLogin: boolean;
-  napCatEndpoint: string;
-  napCatSignature: string;
 }
 
 export interface DeviceInfo {

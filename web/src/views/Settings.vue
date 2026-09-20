@@ -1436,9 +1436,6 @@ const defaultSystemConfig = ref({
 })
 const localLoginSettings = ref({
   wechatQrLogin: true,
-  qqQrLogin: false,
-  napCatEndpoint: '',
-  napCatSignature: '',
 })
 const devicePresets = ref<any[]>([])
 const selectedPresetId = ref('')
@@ -1469,9 +1466,6 @@ function normalizeSystemConfig(source: any, fallback: any) {
 function normalizeLoginSettings(source: any) {
   return {
     wechatQrLogin: typeof source?.wechatQrLogin === 'boolean' ? source.wechatQrLogin : true,
-    qqQrLogin: typeof source?.qqQrLogin === 'boolean' ? source.qqQrLogin : false,
-    napCatEndpoint: typeof source?.napCatEndpoint === 'string' ? source.napCatEndpoint.trim() : '',
-    napCatSignature: typeof source?.napCatSignature === 'string' ? source.napCatSignature.trim() : '',
   }
 }
 
@@ -2407,9 +2401,6 @@ async function handleResetSystemConfig() {
                 <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
                   <div class="border border-gray-200 rounded-lg bg-gray-50/70 p-3 dark:border-gray-700 dark:bg-gray-900/30">
                     <BaseSwitch v-model="localLoginSettings.wechatQrLogin" label="微信扫码登录" />
-                  </div>
-                  <div class="border border-gray-200 rounded-lg bg-gray-50/70 p-3 dark:border-gray-700 dark:bg-gray-900/30">
-                    <BaseSwitch v-model="localLoginSettings.qqQrLogin" label="QQ扫码登录" />
                   </div>
                 </div>
 
