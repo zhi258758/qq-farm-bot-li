@@ -9,6 +9,7 @@ import BaseSwitch from '@/components/ui/BaseSwitch.vue'
 interface PanelUser {
   id: string
   username: string
+  qq: string
   enabled: boolean
   membershipExpiresAt: number | null
   membershipActive: boolean
@@ -29,6 +30,7 @@ interface CardKeyItem {
 
 const registrationEnabled = ref(false)
 const cardClaimEnabled = ref(false)
+const claimCardCode = ref('')
 const configSaving = ref(false)
 const users = ref<PanelUser[]>([])
 const keys = ref<CardKeyItem[]>([])
@@ -85,6 +87,7 @@ async function loadConfig() {
   if (res.data.ok) {
     registrationEnabled.value = res.data.data.registrationEnabled === true
     cardClaimEnabled.value = res.data.data.cardClaimEnabled === true
+    claimCardCode.value = String(res.data.data.claimCardCode || '')
   }
 }
 
@@ -96,6 +99,7 @@ async function saveConfig() {
     const res = await api.put('/api/admin/auth-config', {
       registrationEnabled: registrationEnabled.value,
       cardClaimEnabled: cardClaimEnabled.value,
+      claimCardCode: claimCardCode.value.trim(),
     })
     if (res.data.ok)
       notice.value = '运营开关已保存'
@@ -165,19 +169,25 @@ async function voidKey(code: string) {
 
 async function toggleUser(user: PanelUser, enabled?: boolean) {
   const nextEnabled = enabled === true
+  error.value = ''
   const res = await api.patch(`/api/admin/users/${user.id}`, { enabled: nextEnabled })
   if (res.data.ok)
     await loadUsers()
 }
 
 async function saveUser(user: PanelUser) {
+  error.value = ''
+  notice.value = ''
   const expires = Number(user.membershipExpiresAt)
   const res = await api.patch(`/api/admin/users/${user.id}`, {
     membershipExpiresAt: Number.isFinite(expires) && expires > 0 ? expires : null,
     slotLimit: Number(user.slotLimit),
+    qq: user.qq,
   })
   if (res.data.ok)
     notice.value = `已更新用户 ${user.username}`
+  else
+    error.value = res.data.error || '保存失败'
 }
 
 onMounted(async () => {
@@ -214,6 +224,13 @@ onMounted(async () => {
         <div class="rounded-lg border border-gray-200 p-3">
           <BaseSwitch v-model="cardClaimEnabled" label="开放卡密领取" />
         </div>
+      </div>
+      <div class="mt-3">
+        <BaseInput
+          v-model="claimCardCode"
+          label="指定领取卡密（留空自动选择可用时间卡密）"
+          placeholder="例如 QFXXXXXXXXXXXXXXXXXXXX"
+        />
       </div>
       <div class="mt-3 flex justify-end">
         <BaseButton variant="primary" size="sm" :loading="configSaving" @click="saveConfig">
@@ -310,6 +327,7 @@ onMounted(async () => {
           <thead>
             <tr class="border-b text-gray-500">
               <th class="py-2 pr-3">用户名</th>
+              <th class="py-2 pr-3">QQ号</th>
               <th class="py-2 pr-3">会员到期</th>
               <th class="py-2 pr-3">槽位</th>
               <th class="py-2 pr-3">启用</th>
@@ -320,6 +338,9 @@ onMounted(async () => {
             <tr v-for="user in users" :key="user.id" class="border-b border-gray-100">
               <td class="py-2 pr-3">
                 {{ user.username }}
+              </td>
+              <td class="py-2 pr-3">
+                <input v-model="user.qq" class="w-32 rounded border px-2 py-1" type="text" placeholder="未绑定">
               </td>
               <td class="py-2 pr-3">
                 <input

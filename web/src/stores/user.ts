@@ -8,6 +8,7 @@ export type UserRole = 'admin' | 'user'
 export interface AdminInfo {
   id?: string
   username: string
+  qq?: string
   role: UserRole
   avatar?: string
   mustChangePassword?: boolean
@@ -53,6 +54,7 @@ export const useUserStore = defineStore('user', () => {
       ...userInfo.value,
       id: user.id ?? userInfo.value?.id,
       username: user.username || userInfo.value?.username || '',
+      qq: user.qq ?? userInfo.value?.qq,
       role: nextRole,
       mustChangePassword: payload.mustChangePassword,
       enabled: user.enabled,
@@ -84,9 +86,9 @@ export const useUserStore = defineStore('user', () => {
     }
   }
 
-  async function register(username: string, password: string): Promise<LoginResult> {
+  async function register(username: string, password: string, cardCode: string, qq: string): Promise<LoginResult> {
     try {
-      const res = await api.post('/api/register', { username, password })
+      const res = await api.post('/api/register', { username, password, cardCode, qq })
       if (res.data.ok)
         applyAuthPayload(res.data.data)
       return res.data
@@ -97,6 +99,21 @@ export const useUserStore = defineStore('user', () => {
         ? { ok: false, error: getApiErrorMessage(data, '注册失败') }
         : { ok: false, error: getApiErrorMessage(error, '注册失败') }
     }
+  }
+
+  async function fetchCardClaimStatus() {
+    try {
+      const res = await api.get('/api/card-claim/status')
+      return res.data?.data?.enabled === true
+    }
+    catch {
+      return false
+    }
+  }
+
+  async function claimFreeCard() {
+    const res = await api.post('/api/card-claim/claim')
+    return res.data
   }
 
   async function logout() {
@@ -166,6 +183,8 @@ export const useUserStore = defineStore('user', () => {
     applySession,
     login,
     register,
+    fetchCardClaimStatus,
+    claimFreeCard,
     logout,
     fetchUserInfo,
     changePassword,

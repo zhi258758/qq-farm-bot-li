@@ -35,11 +35,16 @@ function mountUserCardkeyRoutes(app: Application, ctx: AdminContext): void {
             const data = authConfigStore.setAuthConfig({
                 registrationEnabled: body.registrationEnabled === true,
                 cardClaimEnabled: body.cardClaimEnabled === true,
+                claimCardCode: body.claimCardCode == null ? '' : String(body.claimCardCode),
             });
             res.json({ ok: true, data });
         } catch (e: any) {
             handleApiError(res, e);
         }
+    });
+
+    app.get('/api/admin/card-claim/records', adminOnly, (_req: Request, res: Response) => {
+        res.json({ ok: true, data: cardkeyStore.listCardClaims() });
     });
 
     app.get('/api/admin/users', adminOnly, (_req: Request, res: Response) => {
@@ -54,6 +59,7 @@ function mountUserCardkeyRoutes(app: Application, ctx: AdminContext): void {
                 membershipExpiresAt: body.membershipExpiresAt,
                 slotLimit: body.slotLimit,
                 enabled: body.enabled,
+                qq: body.qq,
             });
             if (!result.ok) {
                 return res.status(400).json({ ok: false, error: result.error });

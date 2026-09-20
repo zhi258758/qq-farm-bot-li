@@ -46,21 +46,48 @@ function mountAuthRoutes(app: Application, ctx: AdminContext): void {
 
     app.get('/api/public/auth-config', (_req: Request, res: Response) => {
         const config = authConfigStore.getAuthConfig();
-        res.json({ ok: true, data: { registrationEnabled: config.registrationEnabled } });
+        res.json({
+            ok: true,
+            data: {
+                registrationEnabled: config.registrationEnabled,
+                cardClaimEnabled: config.cardClaimEnabled,
+            },
+        });
     });
 
     app.get('/api/game-version', (_req: Request, res: Response) => {
         res.json({ ok: true, clientVersion: getRuntimeConfig().clientVersion, botVersion: version });
     });
 
-    app.post('/api/register', (req: Request, res: Response) => {
+    app.get('/api/card-claim/status', (_req: Request, res: Response) => {
+        const status = cardkeyStore.getCardClaimStatus();
+        res.json({ ok: true, data: { enabled: status.enabled } });
+    });
+
+    app.post('/api/card-claim/claim', async (req: Request, res: Response) => {
+        const userAgent = String(req.headers['user-agent'] || '').trim();
+        const deviceKey = userAgent || getClientIp(req) || 'anonymous';
+        const result = await cardkeyStore.claimFreeCard(deviceKey);
+        if (!result.ok) {
+            return res.status(result.status || 400).json({ ok: false, error: result.error });
+        }
+        return res.json({ ok: true, data: result.data });
+    });
+
+    app.post('/api/register', async (req: Request, res: Response) => {
         const config = authConfigStore.getAuthConfig();
         if (!config.registrationEnabled) {
             return res.status(403).json({ ok: false, error: '注册未开放' });
         }
-        const { username, password } = req.body || {};
+        const { username, password, cardCode, qq } = req.body || {};
         const adminInfo = adminStore.getAdminInfo();
-        const result = userStore.registerUser(String(username || ''), String(password || ''), adminInfo.username);
+        const result = await cardkeyStore.registerUserWithCard({
+            username: String(username || ''),
+            password: String(password || ''),
+            qq: String(qq == null ? '' : qq),
+            code: String(cardCode || ''),
+            adminUsername: adminInfo.username,
+        });
         if (!result.ok) {
             return res.status(result.status || 400).json({ ok: false, error: result.error });
         }

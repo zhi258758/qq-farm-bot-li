@@ -6,11 +6,13 @@ const security = require('./auth-security');
 const DEFAULT_SLOT_LIMIT = 2;
 const DAY_MS = 24 * 60 * 60 * 1000;
 const ADMIN_OWNER_ID = 'admin';
+const QQ_RE = /^\d{5,11}$/;
 
 interface UserRecord {
     id: string;
     username: string;
     password: string;
+    qq: string;
     role: 'user';
     enabled: boolean;
     membershipExpiresAt: number | null;
@@ -41,6 +43,7 @@ function normalizeUser(raw: any): UserRecord | null {
         id: String(raw.id || ''),
         username,
         password,
+        qq: String(raw.qq || '').trim(),
         role: 'user',
         enabled: raw.enabled !== false,
         membershipExpiresAt: Number.isFinite(membershipExpiresAt as number) ? membershipExpiresAt : null,
@@ -103,6 +106,7 @@ function publicUser(user: UserRecord, extra: Record<string, unknown> = {}) {
     return {
         id: user.id,
         username: user.username,
+        qq: user.qq || '',
         role: user.role,
         enabled: user.enabled,
         membershipExpiresAt: user.membershipExpiresAt,
@@ -123,14 +127,29 @@ function validateUsername(username: string): { ok: boolean; error?: string } {
     return { ok: true };
 }
 
-function registerUser(username: string, password: string, adminUsername = 'admin'): { ok: boolean; user?: any; error?: string; status?: number } {
+function normalizeQq(rawQq: unknown): { ok: boolean; data?: string; error?: string } {
+    const qq = String(rawQq == null ? '' : rawQq).trim();
+    if (!qq) return { ok: false, error: '请输入QQ号' };
+    if (!QQ_RE.test(qq)) return { ok: false, error: 'QQ号格式不正确，应为5-11位数字' };
+    return { ok: true, data: qq };
+}
+
+function registerUser(
+    username: string,
+    password: string,
+    options: { adminUsername?: string; qq?: string } | string = {},
+): { ok: boolean; user?: any; error?: string; status?: number } {
+    const opts = typeof options === 'string' ? { adminUsername: options } : (options || {});
     const nameCheck = validateUsername(username);
     if (!nameCheck.ok) return { ok: false, error: nameCheck.error, status: 400 };
     const pwd = String(password || '');
     if (!pwd) return { ok: false, error: '请输入密码', status: 400 };
 
+    const qqCheck = normalizeQq(opts.qq == null ? '' : opts.qq);
+    if (!qqCheck.ok) return { ok: false, error: qqCheck.error, status: 400 };
+
     const name = String(username).trim();
-    if (name === String(adminUsername || 'admin')) {
+    if (name === String(opts.adminUsername || 'admin')) {
         return { ok: false, error: '用户名已被占用', status: 409 };
     }
 
@@ -143,6 +162,7 @@ function registerUser(username: string, password: string, adminUsername = 'admin
         id: String(data.nextId++),
         username: name,
         password: security.hashPassword(pwd),
+        qq: qqCheck.data as string,
         role: 'user',
         enabled: true,
         membershipExpiresAt: null,
@@ -153,6 +173,17 @@ function registerUser(username: string, password: string, adminUsername = 'admin
     data.users.push(user);
     saveUsers(data);
     return { ok: true, user: publicUser(user, { slotUsed: 0 }) };
+}
+
+function removeUser(userId: string): boolean {
+    const id = String(userId || '');
+    if (!id) return false;
+    const data = loadUsers();
+    const index = data.users.findIndex(user => user.id === id);
+    if (index < 0) return false;
+    data.users.splice(index, 1);
+    saveUsers(data);
+    return true;
 }
 
 function validateUser(username: string, password: string, ip = 'unknown'): any {
@@ -224,10 +255,15 @@ function addQuota(userId: string, slots: number): UserRecord | null {
     return user;
 }
 
-function updateUserEntitlement(userId: string, patch: { membershipExpiresAt?: number | null; slotLimit?: number; enabled?: boolean }): { ok: boolean; user?: any; error?: string } {
+function updateUserEntitlement(userId: string, patch: { membershipExpiresAt?: number | null; slotLimit?: number; enabled?: boolean; qq?: string }): { ok: boolean; user?: any; error?: string } {
     const data = loadUsers();
     const user = data.users.find(item => item.id === String(userId || ''));
     if (!user) return { ok: false, error: '用户不存在' };
+    if (patch.qq !== undefined) {
+        const qqCheck = normalizeQq(patch.qq);
+        if (!qqCheck.ok) return { ok: false, error: qqCheck.error };
+        user.qq = qqCheck.data as string;
+    }
     if (patch.membershipExpiresAt !== undefined) {
         if (patch.membershipExpiresAt == null || patch.membershipExpiresAt === ('' as any)) {
             user.membershipExpiresAt = null;
@@ -258,6 +294,7 @@ module.exports = {
     ADMIN_OWNER_ID,
     DEFAULT_SLOT_LIMIT,
     DAY_MS,
+    QQ_RE,
     loadUsers,
     getUser,
     getUserByUsername,
@@ -265,7 +302,9 @@ module.exports = {
     computeNewExpiry,
     publicUser,
     validateUsername,
+    normalizeQq,
     registerUser,
+    removeUser,
     validateUser,
     changeUserPassword,
     extendMembership,

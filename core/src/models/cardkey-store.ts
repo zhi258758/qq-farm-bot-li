@@ -8,8 +8,12 @@ const authConfigStore = require('./auth-config-store');
 function cardkeysFile(): string {
     return getDataFile('cardkeys.json');
 }
+function cardClaimsFile(): string {
+    return getDataFile('card-claims.json');
+}
 const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const CODE_LENGTH = 20;
+const CLAIM_TTL_MS = 24 * 60 * 60 * 1000;
 
 type CardKeyType = 'time' | 'quota';
 type CardKeyStatus = 'unused' | 'used' | 'voided';
@@ -24,10 +28,24 @@ interface CardKeyRecord {
     usedByUserId?: string;
     usedByUsername?: string;
     voidedAt?: number;
+    claimedByDevice?: string;
+    claimedAt?: number;
 }
 
 interface CardKeysData {
     keys: CardKeyRecord[];
+}
+
+interface CardClaimRecord {
+    id: string;
+    deviceKey: string;
+    cardCode: string;
+    days: number;
+    createdAt: number;
+}
+
+interface CardClaimsData {
+    records: CardClaimRecord[];
 }
 
 let redeemLock: Promise<void> = Promise.resolve();
@@ -70,6 +88,8 @@ function normalizeCardKey(raw: any): CardKeyRecord | null {
     if (raw.usedByUserId) record.usedByUserId = String(raw.usedByUserId);
     if (raw.usedByUsername) record.usedByUsername = String(raw.usedByUsername);
     if (raw.voidedAt) record.voidedAt = Number(raw.voidedAt);
+    if (raw.claimedByDevice) record.claimedByDevice = String(raw.claimedByDevice);
+    if (raw.claimedAt) record.claimedAt = Number(raw.claimedAt);
     return record;
 }
 
@@ -83,6 +103,36 @@ function loadCardKeys(): CardKeysData {
 function saveCardKeys(data: CardKeysData): void {
     ensureDataDir();
     writeJsonFileAtomic(cardkeysFile(), { keys: data.keys });
+}
+
+function loadClaims(): CardClaimsData {
+    ensureDataDir();
+    const raw = readJsonFile(cardClaimsFile(), () => ({ records: [] }));
+    const records = (Array.isArray(raw.records) ? raw.records : [])
+        .map((item: any): CardClaimRecord | null => {
+            if (!item || typeof item !== 'object') return null;
+            const deviceKey = String(item.deviceKey || '').trim();
+            const cardCode = String(item.cardCode || '').trim().toUpperCase();
+            if (!deviceKey || !cardCode) return null;
+            return {
+                id: String(item.id || crypto.randomBytes(8).toString('hex')),
+                deviceKey,
+                cardCode,
+                days: Number(item.days) || 0,
+                createdAt: Number(item.createdAt) || Date.now(),
+            };
+        })
+        .filter(Boolean) as CardClaimRecord[];
+    return { records };
+}
+
+function saveClaims(data: CardClaimsData): void {
+    ensureDataDir();
+    writeJsonFileAtomic(cardClaimsFile(), { records: data.records });
+}
+
+function activeClaims(at: number = Date.now()): CardClaimRecord[] {
+    return loadClaims().records.filter(record => at - record.createdAt < CLAIM_TTL_MS);
 }
 
 function publicCardKey(record: CardKeyRecord, options: { maskUsed?: boolean } = {}) {
@@ -216,6 +266,115 @@ function redeemCardKey(userId: string, rawCode: string) {
     return withLock(() => redeemCardKeySync(userId, rawCode));
 }
 
+function registerUserWithCardSync(input: { username?: string; password?: string; qq?: string; code?: string; adminUsername?: string }) {
+    const username = String(input.username || '').trim();
+    const password = String(input.password || '');
+    const code = String(input.code || '').trim().toUpperCase();
+    if (!code) return { ok: false, error: '请输入卡密', status: 400 };
+
+    const data = loadCardKeys();
+    const record = data.keys.find(item => item.code === code);
+    if (!record || record.status !== 'unused') {
+        return { ok: false, error: '卡密无效或已被使用', status: 400 };
+    }
+    if (record.type !== 'time') {
+        return { ok: false, error: '注册只能使用时间卡密，额度卡密请登录后兑换', status: 400 };
+    }
+
+    const created = userStore.registerUser(username, password, {
+        adminUsername: input.adminUsername,
+        qq: String(input.qq == null ? '' : input.qq),
+    });
+    if (!created.ok) return created;
+
+    record.status = 'used';
+    record.usedAt = Date.now();
+    record.usedByUserId = created.user.id;
+    record.usedByUsername = created.user.username;
+    saveCardKeys(data);
+
+    const updated = userStore.extendMembership(created.user.id, record.value) || created.user;
+    return {
+        ok: true,
+        user: userStore.publicUser(updated),
+        key: {
+            type: record.type,
+            value: record.value,
+            redeemedAt: record.usedAt,
+            code: maskCode(record.code),
+        },
+    };
+}
+
+function registerUserWithCard(input: { username?: string; password?: string; qq?: string; code?: string; adminUsername?: string }) {
+    return withLock(() => registerUserWithCardSync(input));
+}
+
+function getCardClaimStatus() {
+    const config = authConfigStore.getAuthConfig();
+    return { enabled: config.cardClaimEnabled, cardCode: config.claimCardCode || '' };
+}
+
+function claimFreeCardSync(deviceKey: string) {
+    const config = authConfigStore.getAuthConfig();
+    if (!config.cardClaimEnabled) {
+        return { ok: false, error: '当前未开启免费卡密领取', status: 403 };
+    }
+    const key = String(deviceKey || '').trim() || 'anonymous';
+    const claims = activeClaims();
+    if (claims.some(item => item.deviceKey === key)) {
+        return { ok: false, error: '每个设备只能领取一次卡密', status: 400 };
+    }
+
+    const cards = loadCardKeys();
+    let record: CardKeyRecord | null = null;
+    if (config.claimCardCode) {
+        record = cards.keys.find(item => item.code === config.claimCardCode && item.status === 'unused') || null;
+    } else {
+        const reserved = new Set(claims.map(item => item.cardCode));
+        record = cards.keys.find(item => item.type === 'time' && item.status === 'unused' && !reserved.has(item.code)) || null;
+    }
+    if (!record) return { ok: false, error: '暂无可领取的卡密', status: 400 };
+
+    const now = Date.now();
+    record.claimedByDevice = key;
+    record.claimedAt = now;
+    saveCardKeys(cards);
+
+    saveClaims({
+        records: claims.concat({
+            id: crypto.randomBytes(8).toString('hex'),
+            deviceKey: key,
+            cardCode: record.code,
+            days: record.value,
+            createdAt: now,
+        }),
+    });
+    return { ok: true, data: { cardCode: record.code, type: record.type, days: record.value } };
+}
+
+function claimFreeCard(deviceKey: string) {
+    return withLock(() => claimFreeCardSync(deviceKey));
+}
+
+function listCardClaims() {
+    return activeClaims().map(item => ({
+        id: item.id,
+        cardCode: maskCode(item.cardCode),
+        days: item.days,
+        deviceKey: item.deviceKey,
+        createdAt: item.createdAt,
+    }));
+}
+
+function clearExpiredCardClaims() {
+    return withLock(() => {
+        const active = activeClaims();
+        saveClaims({ records: active });
+        return active.length;
+    });
+}
+
 function listUserRedeems(userId: string) {
     const id = String(userId || '');
     return loadCardKeys().keys
@@ -234,6 +393,11 @@ module.exports = {
     listCardKeys,
     voidCardKey,
     redeemCardKey,
+    registerUserWithCard,
+    getCardClaimStatus,
+    claimFreeCard,
+    listCardClaims,
+    clearExpiredCardClaims,
     listUserRedeems,
     publicCardKey,
 };

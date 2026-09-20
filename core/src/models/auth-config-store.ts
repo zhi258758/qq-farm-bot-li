@@ -9,6 +9,7 @@ function authConfigFile(): string {
 interface AuthConfig {
     registrationEnabled: boolean;
     cardClaimEnabled: boolean;
+    claimCardCode: string;
     updatedAt: number;
 }
 
@@ -16,6 +17,7 @@ function defaultConfig(): AuthConfig {
     return {
         registrationEnabled: false,
         cardClaimEnabled: false,
+        claimCardCode: '',
         updatedAt: Date.now(),
     };
 }
@@ -25,6 +27,7 @@ function normalizeConfig(raw: any): AuthConfig {
     return {
         registrationEnabled: source.registrationEnabled === true,
         cardClaimEnabled: source.cardClaimEnabled === true,
+        claimCardCode: String(source.claimCardCode || '').trim().toUpperCase(),
         updatedAt: Number(source.updatedAt) || Date.now(),
     };
 }
