@@ -143,6 +143,100 @@ test('collectQqFriendGids stops early when the account is no longer the same ins
     assert.deepEqual(stopped, ['flow-1']);
 });
 
+test('collectQqFriendGids imports new friend gids and broadcasts config', async () => {
+    const store = require('../dist/models/store');
+    const created = store.addOrUpdateAccount({ ownerUserId: 'admin', name: 'capture-a', code: 'code-a', platform: 'qq' });
+    const account = created.accounts.find(item => item.name === 'capture-a');
+    const flow = createFlow({ friendGids: new Set([111, 222]) });
+    const broadcasts = [];
+    let refreshCount = 0;
+    let afterStopCount = 0;
+
+    const imported = await captureRoutes.collectQqFriendGids({
+        provider: { broadcastConfig: id => broadcasts.push(id) },
+        logger: { info() {}, warn() {} },
+        flow,
+        accountId: account.id,
+        accountCreatedAt: account.createdAt,
+        refresh: async (target) => {
+            refreshCount += 1;
+            target.friendListComplete = true;
+        },
+        stop: async () => {},
+        wait: async () => {},
+        now: () => 0,
+        afterStop: async () => { afterStopCount += 1; },
+    });
+
+    assert.equal(imported, 2);
+    assert.equal(refreshCount, 1);
+    assert.equal(afterStopCount, 1);
+    assert.deepEqual(broadcasts, [account.id]);
+    assert.deepEqual(store.getKnownFriendGids(account.id).map(Number).sort((a, b) => a - b), [111, 222]);
+});
+
+test('collectQqFriendGids skips import when the flow was cancelled', async () => {
+    const stopped = [];
+    const flow = createFlow({ cancelled: true, friendGids: new Set([111]) });
+    let afterStopCount = 0;
+
+    const imported = await captureRoutes.collectQqFriendGids({
+        provider: {},
+        logger: { info() {}, warn() {} },
+        flow,
+        accountId: 'any-account',
+        accountCreatedAt: '2020-01-01T00:00:00.000Z',
+        refresh: async () => { throw new Error('should not refresh'); },
+        stop: async (target) => { stopped.push(target.id); },
+        wait: async () => {},
+        now: () => 0,
+        afterStop: async () => { afterStopCount += 1; },
+    });
+
+    assert.equal(imported, 0);
+    assert.deepEqual(stopped, ['flow-1']);
+    assert.equal(afterStopCount, 0);
+});
+
+test('scheduleCapturedAccountStart starts new accounts and restarts running updates', () => {
+    const calls = [];
+    const provider = {
+        startAccount: id => calls.push(['start', id]),
+        restartAccount: id => calls.push(['restart', id]),
+    };
+    const runScheduled = (options) => {
+        let callback;
+        captureRoutes.scheduleCapturedAccountStart({
+            ...options,
+            logger: { warn() {} },
+            schedule: (fn) => { callback = fn; return {}; },
+        });
+        callback();
+    };
+
+    runScheduled({ provider, flow: {}, account: { id: 'a1' }, isUpdate: false, wasRunning: false });
+    runScheduled({ provider, flow: {}, account: { id: 'a2' }, isUpdate: true, wasRunning: true });
+    runScheduled({ provider, flow: {}, account: { id: 'a3' }, isUpdate: true, wasRunning: false });
+
+    assert.deepEqual(calls, [['start', 'a1'], ['restart', 'a2']]);
+});
+
+test('scheduleCapturedAccountStart records start errors on the flow result', () => {
+    const flow = { result: {} };
+    let callback;
+    captureRoutes.scheduleCapturedAccountStart({
+        provider: { startAccount() { throw new Error('boom'); } },
+        logger: { warn() {} },
+        flow,
+        account: { id: 'a1' },
+        isUpdate: false,
+        wasRunning: false,
+        schedule: (fn) => { callback = fn; return {}; },
+    });
+    callback();
+    assert.equal(flow.result.startError, 'boom');
+});
+
 test.after(() => {
     if (previousDataDir === undefined) delete process.env.QQFARM_DATA_DIR;
     else process.env.QQFARM_DATA_DIR = previousDataDir;
