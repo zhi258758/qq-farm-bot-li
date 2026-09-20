@@ -505,6 +505,24 @@ const globalConfig: GlobalConfig = {
     offlineReminder: { ...DEFAULT_OFFLINE_REMINDER },
     systemConfig: null,
     captureConfig: undefined,
+    loginLinks: {
+        logoUrl: '',
+        title: 'QQ农场智能助手',
+        loginSubtitle: '欢迎回来，开启智慧农耕之旅',
+        registerSubtitle: '创建账号，开启智慧农耕之旅',
+        purchaseUrl: '',
+        qqGroupUrl: '',
+    },
+    groupVerify: {
+        enabled: false,
+        qqGroupNumber: '',
+        verifyUrl: '',
+        verifyToken: '',
+        verifyMode: '',
+        timeoutMs: 5000,
+    },
+    announcement: { content: '', showOnce: true, enabled: true, updatedAt: 0 },
+    announcementReadRecords: {},
 };
 
 function resolveAccountId(accountId: unknown): string {
@@ -546,6 +564,43 @@ function loadGlobalConfig(): void {
             if (data.captureConfig && typeof data.captureConfig === 'object') {
                 globalConfig.captureConfig = { ...data.captureConfig };
             }
+
+            if (data.loginLinks && typeof data.loginLinks === 'object') {
+                globalConfig.loginLinks = {
+                    logoUrl: String(data.loginLinks.logoUrl ?? '').trim(),
+                    title: String(data.loginLinks.title || globalConfig.loginLinks.title).trim(),
+                    loginSubtitle: String(data.loginLinks.loginSubtitle || globalConfig.loginLinks.loginSubtitle).trim(),
+                    registerSubtitle: String(data.loginLinks.registerSubtitle || globalConfig.loginLinks.registerSubtitle).trim(),
+                    purchaseUrl: String(data.loginLinks.purchaseUrl ?? '').trim(),
+                    qqGroupUrl: String(data.loginLinks.qqGroupUrl ?? '').trim(),
+                };
+            }
+
+            if (data.groupVerify && typeof data.groupVerify === 'object') {
+                const timeout = Number(data.groupVerify.timeoutMs);
+                globalConfig.groupVerify = {
+                    enabled: data.groupVerify.enabled === true,
+                    qqGroupNumber: String(data.groupVerify.qqGroupNumber || '').trim(),
+                    verifyUrl: String(data.groupVerify.verifyUrl || '').trim(),
+                    verifyToken: String(data.groupVerify.verifyToken || '').trim(),
+                    verifyMode: String(data.groupVerify.verifyMode || '').trim().toLowerCase() === 'napcat' ? 'napcat' : '',
+                    timeoutMs: Math.max(1000, Math.min(15000, Number.isFinite(timeout) && timeout > 0 ? timeout : 5000)),
+                };
+            }
+
+            if (data.announcement && typeof data.announcement === 'object') {
+                globalConfig.announcement = {
+                    content: String(data.announcement.content || '').trim(),
+                    showOnce: data.announcement.showOnce !== false,
+                    enabled: data.announcement.enabled !== false,
+                    updatedAt: Number(data.announcement.updatedAt) || 0,
+                };
+            }
+
+            if (data.announcementReadRecords && typeof data.announcementReadRecords === 'object') {
+                globalConfig.announcementReadRecords = { ...data.announcementReadRecords };
+            }
+
 
             if (data.loginSettings && typeof data.loginSettings === 'object') {
                 globalConfig.loginSettings = {

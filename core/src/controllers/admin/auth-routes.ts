@@ -11,6 +11,7 @@ const userStore = require('../../models/user-store');
 const authConfigStore = require('../../models/auth-config-store');
 const cardkeyStore = require('../../models/cardkey-store');
 const store = require('../../models/store');
+const { verifyGroupMembership } = require('../../services/group-verify');
 
 const {
     getClientIp,
@@ -39,6 +40,21 @@ function loginFailureStatus(errorType: string): number {
     if (errorType === 'locked') return 423;
     if (errorType === 'disabled') return 403;
     return 401;
+}
+
+async function checkGroupMembership(res: Response, qq: unknown, groupVerify: any): Promise<boolean> {
+    const boundQq = String(qq || '').trim();
+    const verification = await verifyGroupMembership(boundQq, groupVerify);
+    if (verification.inGroup) return true;
+    const unavailable = verification.error === 'service_unavailable';
+    res.status(403).json({
+        ok: false,
+        error: unavailable ? 'QQ群验证服务暂不可用，请稍后再试' : '请先加入QQ群后再登录',
+        code: 'NOT_IN_GROUP',
+        qqGroupNumber: String(groupVerify.qqGroupNumber || ''),
+        qq: boundQq,
+    });
+    return false;
 }
 
 function mountAuthRoutes(app: Application, ctx: AdminContext): void {
@@ -81,6 +97,13 @@ function mountAuthRoutes(app: Application, ctx: AdminContext): void {
         }
         const { username, password, cardCode, qq } = req.body || {};
         const adminInfo = adminStore.getAdminInfo();
+
+        const groupVerify = store.getGroupVerifyConfig ? store.getGroupVerifyConfig() : null;
+        if (groupVerify && groupVerify.enabled === true) {
+            const passed = await checkGroupMembership(res, qq, groupVerify);
+            if (!passed) return;
+        }
+
         const result = await cardkeyStore.registerUserWithCard({
             username: String(username || ''),
             password: String(password || ''),
@@ -107,7 +130,7 @@ function mountAuthRoutes(app: Application, ctx: AdminContext): void {
         });
     });
 
-    app.post('/api/login', (req: Request, res: Response) => {
+    app.post('/api/login', async (req: Request, res: Response) => {
         const { username, password } = req.body || {};
         if (!username || !password) {
             return res.status(401).json({ ok: false, error: '请输入用户名和密码' });
@@ -154,6 +177,15 @@ function mountAuthRoutes(app: Application, ctx: AdminContext): void {
             });
         }
 
+        const groupVerify = store.getGroupVerifyConfig ? store.getGroupVerifyConfig() : null;
+        if (groupVerify && groupVerify.enabled === true) {
+            const passed = await checkGroupMembership(res, userResult.qq, groupVerify);
+            if (!passed) {
+                adminLogger.warn('登录被QQ群验证拦截', { username, ip: clientIp });
+                return;
+            }
+        }
+
         const session = createSession(ctx, {
             role: 'user',
             userId: userResult.id,
@@ -187,7 +219,7 @@ function mountAuthRoutes(app: Application, ctx: AdminContext): void {
     });
 
     app.use('/api', (req: Request, res: Response, next: any) => {
-        if (req.path === '/login' || req.path === '/register' || req.path === '/game-version' || req.path === '/public/auth-config') {
+        if (req.path === '/login' || req.path === '/register' || req.path === '/game-version' || req.path === '/public/auth-config' || req.path === '/public/login-links' || req.path === '/announcement') {
             return next();
         }
         if (req.path.startsWith('/public/capture-certificate/')) {

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { GroupVerifyTestResult } from '@/composables/useAdminSystemConfig'
 import { NButton } from 'naive-ui/es/button'
 import { NTab, NTabs } from 'naive-ui/es/tabs'
 import { NTimePicker } from 'naive-ui/es/time-picker'
@@ -7,6 +8,8 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import api, { getApiErrorMessage } from '@/api'
 import AccountModal from '@/components/AccountModal.vue'
+import AdminGroupVerifyCard from '@/components/admin/AdminGroupVerifyCard.vue'
+import AdminLoginLinksCard from '@/components/admin/AdminLoginLinksCard.vue'
 import ConfirmModal from '@/components/ConfirmModal.vue'
 import AutomationSettingsForm from '@/components/settings/AutomationSettingsForm.vue'
 import BagSeedPriorityItem from '@/components/settings/BagSeedPriorityItem.vue'
@@ -14,6 +17,10 @@ import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
 import BaseSelect from '@/components/ui/BaseSelect.vue'
 import BaseSwitch from '@/components/ui/BaseSwitch.vue'
+import {
+  DEFAULT_GROUP_VERIFY_CONFIG,
+  DEFAULT_LOGIN_LINKS,
+} from '@/composables/useAdminSystemConfig'
 import { getPlatformClass, getPlatformLabel, useAccountStore } from '@/stores/account'
 import { useSettingStore } from '@/stores/setting'
 import { useStatusStore } from '@/stores/status'
@@ -150,7 +157,7 @@ onMounted(async () => {
       await loadStrategyData(currentAccountId.value)
   }
   if (userStore.isAdmin)
-    await Promise.all([loadSystemConfig(), loadDevicePresets(), loadCaptureConfig()])
+    await Promise.all([loadSystemConfig(), loadDevicePresets(), loadCaptureConfig(), loadLoginLinks(), loadGroupVerify()])
 })
 
 function openSettings(account: any) {
@@ -199,10 +206,10 @@ async function confirmDelete() {
   if (accountToDelete.value) {
     try {
       deleteLoading.value = true
-        await accountStore.deleteAccount(accountToDelete.value.id)
-        accountToDelete.value = null
-        showDeleteConfirm.value = false
-        await userStore.fetchUserInfo()
+      await accountStore.deleteAccount(accountToDelete.value.id)
+      accountToDelete.value = null
+      showDeleteConfirm.value = false
+      await userStore.fetchUserInfo()
     }
     finally {
       deleteLoading.value = false
@@ -1408,6 +1415,16 @@ const defaultCaptureConfig = {
 }
 const localCaptureConfig = ref({ ...defaultCaptureConfig })
 
+const loginLinksSaving = ref(false)
+const loginLogoUploading = ref(false)
+const localLoginLinks = ref({ ...DEFAULT_LOGIN_LINKS })
+const groupVerifyLoading = ref(false)
+const groupVerifySaving = ref(false)
+const groupVerifyTesting = ref(false)
+const groupVerifyTestQq = ref('')
+const groupVerifyTestResult = ref<GroupVerifyTestResult | null>(null)
+const localGroupVerify = ref({ ...DEFAULT_GROUP_VERIFY_CONFIG })
+
 const defaultDeviceInfo = {
   os: 'Windows',
   clientVersion: '',
@@ -1584,6 +1601,147 @@ async function handleSaveCaptureConfig() {
   }
   finally {
     captureConfigSaving.value = false
+  }
+}
+
+async function loadLoginLinks() {
+  try {
+    const { data } = await api.get('/api/admin/login-links')
+    if (data?.ok && data.data)
+      localLoginLinks.value = { ...DEFAULT_LOGIN_LINKS, ...data.data }
+  }
+  catch (e) {
+    console.error('加载登录页设置失败:', e)
+  }
+}
+
+async function handleSaveLoginLinks() {
+  loginLinksSaving.value = true
+  try {
+    const { data } = await api.post('/api/admin/login-links', { ...localLoginLinks.value })
+    if (data?.ok && data.data) {
+      localLoginLinks.value = { ...DEFAULT_LOGIN_LINKS, ...data.data }
+      showAlert('登录页设置已保存', 'primary')
+    }
+    else {
+      showAlert(getApiErrorMessage(data, '保存失败'), 'danger')
+    }
+  }
+  catch (e: any) {
+    showAlert(`保存失败: ${getApiErrorMessage(e, '未知错误')}`, 'danger')
+  }
+  finally {
+    loginLinksSaving.value = false
+  }
+}
+
+async function handleResetLoginLinks() {
+  loginLinksSaving.value = true
+  try {
+    const { data } = await api.post('/api/admin/login-links/reset')
+    if (data?.ok && data.data) {
+      localLoginLinks.value = { ...DEFAULT_LOGIN_LINKS, ...data.data }
+      showAlert('登录页设置已恢复默认', 'primary')
+    }
+    else {
+      showAlert(getApiErrorMessage(data, '恢复默认失败'), 'danger')
+    }
+  }
+  catch (e: any) {
+    showAlert(`恢复默认失败: ${getApiErrorMessage(e, '未知错误')}`, 'danger')
+  }
+  finally {
+    loginLinksSaving.value = false
+  }
+}
+
+async function handleUploadLoginLogo(file: File) {
+  const allowedTypes = ['image/png', 'image/jpeg', 'image/webp', 'image/gif', 'image/svg+xml', 'image/x-icon', 'image/vnd.microsoft.icon']
+  if (!allowedTypes.includes(file.type)) {
+    showAlert('仅支持 PNG、JPG、WebP、GIF、SVG 或 ICO 图片', 'danger')
+    return
+  }
+  if (file.size > 2 * 1024 * 1024) {
+    showAlert('图片大小不能超过 2MB', 'danger')
+    return
+  }
+  loginLogoUploading.value = true
+  try {
+    const filename = encodeURIComponent(file.name || 'logo')
+    const { data } = await api.post(`/api/admin/login-logo?filename=${filename}`, file, {
+      headers: { 'Content-Type': file.type || 'application/octet-stream' },
+    } as any)
+    if (data?.ok && data.data) {
+      localLoginLinks.value = { ...DEFAULT_LOGIN_LINKS, ...data.data }
+      showAlert('登录图标已上传并保存', 'primary')
+    }
+    else {
+      showAlert(getApiErrorMessage(data, '上传失败'), 'danger')
+    }
+  }
+  catch (e: any) {
+    showAlert(`上传失败: ${getApiErrorMessage(e, '未知错误')}`, 'danger')
+  }
+  finally {
+    loginLogoUploading.value = false
+  }
+}
+
+async function loadGroupVerify() {
+  groupVerifyLoading.value = true
+  try {
+    const { data } = await api.get('/api/admin/group-verify')
+    if (data?.ok && data.data)
+      localGroupVerify.value = { ...DEFAULT_GROUP_VERIFY_CONFIG, ...data.data, verifyToken: '' }
+  }
+  catch (e) {
+    console.error('加载QQ群验证配置失败:', e)
+  }
+  finally {
+    groupVerifyLoading.value = false
+  }
+}
+
+async function handleSaveGroupVerify() {
+  groupVerifySaving.value = true
+  try {
+    const { data } = await api.post('/api/admin/group-verify', localGroupVerify.value)
+    if (data?.ok && data.data) {
+      localGroupVerify.value = { ...DEFAULT_GROUP_VERIFY_CONFIG, ...data.data, verifyToken: '' }
+      showAlert('QQ群验证配置已保存', 'primary')
+    }
+    else {
+      showAlert(getApiErrorMessage(data, '保存失败'), 'danger')
+    }
+  }
+  catch (e: any) {
+    showAlert(`保存失败: ${getApiErrorMessage(e, '未知错误')}`, 'danger')
+  }
+  finally {
+    groupVerifySaving.value = false
+  }
+}
+
+async function handleTestGroupVerify() {
+  const qq = groupVerifyTestQq.value.trim()
+  if (!/^\d{5,11}$/.test(qq)) {
+    showAlert('请先填写 5-11 位数字的测试QQ号（需能判断是否在群内）', 'danger')
+    return
+  }
+  groupVerifyTesting.value = true
+  groupVerifyTestResult.value = null
+  try {
+    const { data } = await api.post('/api/admin/group-verify/test', { qq }, { timeout: 20000 } as any)
+    if (data?.ok && data.data)
+      groupVerifyTestResult.value = data.data
+    else
+      showAlert(getApiErrorMessage(data, '测试失败'), 'danger')
+  }
+  catch (e: any) {
+    showAlert(`测试失败: ${getApiErrorMessage(e, '未知错误')}`, 'danger')
+  }
+  finally {
+    groupVerifyTesting.value = false
   }
 }
 
@@ -1963,7 +2121,7 @@ async function handleResetSystemConfig() {
                       {{ item.name }} · {{ item.scope }}
                       <button
                         type="button"
-                        class="i-carbon-close text-amber-600 hover:text-amber-900 dark:text-amber-300 dark:hover:text-amber-100"
+                        class="i-carbon-close text-amber-600 dark:text-amber-300 hover:text-amber-900 dark:hover:text-amber-100"
                         :title="`清除 ${item.name} 的土地限制`"
                         :aria-label="`清除 ${item.name} 的土地限制`"
                         @click="setBagSeedLandTypes(item.seedId, [])"
@@ -2127,8 +2285,10 @@ async function handleResetSystemConfig() {
                 </div>
               </div>
               <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <div class="rounded-lg border border-gray-200 p-3 dark:border-gray-700">
-                  <div class="text-xs text-gray-500">会员状态</div>
+                <div class="border border-gray-200 rounded-lg p-3 dark:border-gray-700">
+                  <div class="text-xs text-gray-500">
+                    会员状态
+                  </div>
                   <div class="mt-1 font-medium">
                     {{ userStore.isAdmin ? '超级管理员' : (userStore.membershipActive ? '已开通' : '未开通/已过期') }}
                   </div>
@@ -2136,8 +2296,10 @@ async function handleResetSystemConfig() {
                     {{ userStore.isAdmin ? '不受到期限制' : formatMembershipTime(userStore.membershipExpiresAt) }}
                   </div>
                 </div>
-                <div class="rounded-lg border border-gray-200 p-3 dark:border-gray-700">
-                  <div class="text-xs text-gray-500">账号槽位</div>
+                <div class="border border-gray-200 rounded-lg p-3 dark:border-gray-700">
+                  <div class="text-xs text-gray-500">
+                    账号槽位
+                  </div>
                   <div class="mt-1 font-medium">
                     {{ userStore.isAdmin ? '不限' : `${userStore.slotUsed} / ${userStore.slotLimit}` }}
                   </div>
@@ -2184,10 +2346,18 @@ async function handleResetSystemConfig() {
               <table class="min-w-full text-left text-sm">
                 <thead>
                   <tr class="border-b text-gray-500">
-                    <th class="py-2 pr-3">卡密</th>
-                    <th class="py-2 pr-3">类型</th>
-                    <th class="py-2 pr-3">面值</th>
-                    <th class="py-2 pr-3">时间</th>
+                    <th class="py-2 pr-3">
+                      卡密
+                    </th>
+                    <th class="py-2 pr-3">
+                      类型
+                    </th>
+                    <th class="py-2 pr-3">
+                      面值
+                    </th>
+                    <th class="py-2 pr-3">
+                      时间
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -2513,6 +2683,26 @@ async function handleResetSystemConfig() {
                 </div>
               </section>
 
+              <AdminLoginLinksCard
+                v-model:links="localLoginLinks"
+                :saving="loginLinksSaving"
+                :logo-uploading="loginLogoUploading"
+                @save="handleSaveLoginLinks"
+                @reset="handleResetLoginLinks"
+                @upload="handleUploadLoginLogo"
+              />
+
+              <AdminGroupVerifyCard
+                v-model:config="localGroupVerify"
+                v-model:test-qq="groupVerifyTestQq"
+                :loading="groupVerifyLoading"
+                :saving="groupVerifySaving"
+                :testing="groupVerifyTesting"
+                :test-result="groupVerifyTestResult"
+                @save="handleSaveGroupVerify"
+                @test="handleTestGroupVerify"
+              />
+
               <section class="farm-card rounded-lg p-4">
                 <div class="mb-4 flex items-start gap-3">
                   <div class="h-9 w-9 flex shrink-0 items-center justify-center rounded-lg bg-green-50 text-green-600 dark:bg-green-900/25 dark:text-green-400">
@@ -2529,8 +2719,8 @@ async function handleResetSystemConfig() {
                 </div>
 
                 <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <div class="flex min-w-0 flex-col gap-1.5">
-                    <div class="flex min-h-6 items-center justify-between gap-2">
+                  <div class="min-w-0 flex flex-col gap-1.5">
+                    <div class="min-h-6 flex items-center justify-between gap-2">
                       <span class="text-sm text-gray-700 font-medium dark:text-gray-300">推送渠道</span>
                       <BaseButton
                         variant="text"

@@ -152,6 +152,10 @@ export interface GlobalConfig {
   offlineReminder: OfflineReminder;
   systemConfig: SystemConfig | null;
   captureConfig?: CaptureConfig;
+  loginLinks?: LoginLinks;
+  groupVerify?: GroupVerifyConfig;
+  announcement?: Announcement;
+  announcementReadRecords?: Record<string, number>;
 }
 
 export interface CaptureConfig {
@@ -160,4 +164,29 @@ export interface CaptureConfig {
   apiBase: string;
   apiToken: string;
   autoImportQqGids: boolean;
+}
+
+export interface LoginLinks {
+  logoUrl: string;
+  title: string;
+  loginSubtitle: string;
+  registerSubtitle: string;
+  purchaseUrl: string;
+  qqGroupUrl: string;
+}
+
+export interface GroupVerifyConfig {
+  enabled: boolean;
+  qqGroupNumber: string;
+  verifyUrl: string;
+  verifyToken: string;
+  verifyMode: string;
+  timeoutMs: number;
+}
+
+export interface Announcement {
+  content: string;
+  showOnce: boolean;
+  enabled: boolean;
+  updatedAt: number;
 }

@@ -24,6 +24,9 @@ export interface LoginResult {
   error?: string
   errorType?: 'rate_limit' | 'locked' | 'invalid_credentials' | 'disabled'
   remainingMs?: number
+  code?: string
+  qqGroupNumber?: string
+  qq?: string
   data?: {
     token: string
     role: UserRole
@@ -81,7 +84,15 @@ export const useUserStore = defineStore('user', () => {
     catch (error: any) {
       const data = error.response?.data
       return data
-        ? { ok: false, error: getApiErrorMessage(data, '网络错误'), errorType: data.errorType, remainingMs: data.remainingMs }
+        ? {
+            ok: false,
+            error: getApiErrorMessage(data, '网络错误'),
+            errorType: data.errorType,
+            remainingMs: data.remainingMs,
+            code: data.code,
+            qqGroupNumber: data.qqGroupNumber,
+            qq: data.qq,
+          }
         : { ok: false, error: getApiErrorMessage(error, '网络错误') }
     }
   }
@@ -96,7 +107,13 @@ export const useUserStore = defineStore('user', () => {
     catch (error: any) {
       const data = error.response?.data
       return data
-        ? { ok: false, error: getApiErrorMessage(data, '注册失败') }
+        ? {
+            ok: false,
+            error: getApiErrorMessage(data, '注册失败'),
+            code: data.code,
+            qqGroupNumber: data.qqGroupNumber,
+            qq: data.qq,
+          }
         : { ok: false, error: getApiErrorMessage(error, '注册失败') }
     }
   }

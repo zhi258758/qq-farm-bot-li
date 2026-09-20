@@ -4,6 +4,9 @@ const globalConfig = require('./global-config');
 const accountConfig = require('./account-config');
 const accounts = require('./accounts');
 const captureConfig = require('./capture-config');
+const loginLinks = require('./login-links');
+const groupVerifyConfig = require('./group-verify-config');
+const announcement = require('./announcement');
 
 module.exports = {
     // Account config
@@ -69,4 +72,22 @@ module.exports = {
     DEFAULT_CAPTURE_CONFIG: captureConfig.DEFAULT_CAPTURE_CONFIG,
     getCaptureConfig: captureConfig.getCaptureConfig,
     setCaptureConfig: captureConfig.setCaptureConfig,
+
+    // Login page links & logo
+    DEFAULT_LOGIN_LINKS: loginLinks.DEFAULT_LOGIN_LINKS,
+    getLoginLinks: loginLinks.getLoginLinks,
+    setLoginLinks: loginLinks.setLoginLinks,
+
+    // QQ group verification config
+    DEFAULT_GROUP_VERIFY_CONFIG: groupVerifyConfig.DEFAULT_GROUP_VERIFY_CONFIG,
+    normalizeGroupVerifyMode: groupVerifyConfig.normalizeGroupVerifyMode,
+    getGroupVerifyConfig: groupVerifyConfig.getGroupVerifyConfig,
+    setGroupVerifyConfig: groupVerifyConfig.setGroupVerifyConfig,
+
+    // Announcement
+    getAnnouncement: announcement.getAnnouncement,
+    setAnnouncement: announcement.setAnnouncement,
+    getAnnouncementReadRecord: announcement.getAnnouncementReadRecord,
+    markAnnouncementRead: announcement.markAnnouncementRead,
+    shouldShowAnnouncement: announcement.shouldShowAnnouncement,
 };

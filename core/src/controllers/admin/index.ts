@@ -10,11 +10,13 @@ const path = require('node:path');
 const express = require('express');
 
 const { CONFIG } = require('../../config/config');
-const { getResourcePath } = require('../../config/runtime-paths');
+const { getResourcePath, getDataFile } = require('../../config/runtime-paths');
 const { createModuleLogger } = require('../../services/logger');
 
 const { createAdminContext } = require('./context');
 const { mountAuthRoutes } = require('./auth-routes');
+const { mountSystemRoutes, ensureLoginAssetsDir } = require('./system-routes');
+const { mountAnnouncementRoutes } = require('./announcement-routes');
 const { mountUserCardkeyRoutes } = require('./user-cardkey-routes');
 const { mountAccountRoutes } = require('./account-routes');
 const { mountFarmRoutes } = require('./farm-routes');
@@ -73,8 +75,20 @@ function startAdminServer(dataProvider: any): void {
     }
     app.use('/game-config', express.static(getResourcePath('gameConfig')));
 
+    const loginAssetsDir = getDataFile('login-assets');
+    ensureLoginAssetsDir();
+    app.use('/login-assets', express.static(loginAssetsDir, {
+        maxAge: '7d',
+        setHeaders(res: any) {
+            res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+        },
+    }));
+    app.use('/login-assets', (_req: any, res: any) => res.sendStatus(404));
+
     // Mount route modules
     mountAuthRoutes(app, ctx);
+    mountSystemRoutes(app, ctx);
+    mountAnnouncementRoutes(app, ctx);
     mountUserCardkeyRoutes(app, ctx);
     mountCaptureRoutes(app, ctx);
     mountWxLoginRoutes(app, ctx);
