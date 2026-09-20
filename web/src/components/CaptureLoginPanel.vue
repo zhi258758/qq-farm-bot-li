@@ -185,23 +185,53 @@ async function startCaptureSession() {
   }
 }
 
+async function writeClipboardText(text: string): Promise<boolean> {
+  try {
+    if (typeof navigator !== 'undefined' && navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text)
+      return true
+    }
+  }
+  catch {}
+  // 非安全上下文或 iframe 中 clipboard API 不可用时回退到 execCommand
+  try {
+    const textarea = document.createElement('textarea')
+    textarea.value = text
+    textarea.setAttribute('readonly', '')
+    textarea.style.position = 'fixed'
+    textarea.style.top = '-1000px'
+    textarea.style.left = '-1000px'
+    textarea.style.opacity = '0'
+    document.body.appendChild(textarea)
+    textarea.focus()
+    textarea.select()
+    textarea.setSelectionRange(0, text.length)
+    const ok = document.execCommand('copy')
+    document.body.removeChild(textarea)
+    return ok
+  }
+  catch {
+    return false
+  }
+}
+
 async function copyCaptureValue(field: 'host' | 'port') {
   const host = captureFlow.value?.publicInfo.host || ''
   const port = captureFlow.value?.publicInfo.mitmPort || 0
   const value = field === 'host' ? host : String(port || '')
   if (!value)
     return
-  try {
-    await navigator.clipboard.writeText(value)
-    captureCopiedField.value = field
-    window.setTimeout(() => {
-      if (captureCopiedField.value === field)
-        captureCopiedField.value = ''
-    }, 1500)
-  }
-  catch {
+  const ok = await writeClipboardText(value)
+  if (!ok) {
     captureError.value = '复制失败，请手动填写代理地址和端口'
+    return
   }
+  captureError.value = ''
+  captureCopiedField.value = field
+  window.setTimeout(() => {
+    if (captureCopiedField.value === field)
+      captureCopiedField.value = ''
+  }, 1500)
 }
 
 function openCaptureHelp() {

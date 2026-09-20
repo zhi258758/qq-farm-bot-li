@@ -63,6 +63,14 @@ function findHeadEnd(buffer: Buffer): number {
   return -1;
 }
 
+/** 将明文代理的绝对 URL 请求行重写为 origin-form（供上游直接访问） */
+function rewriteAbsoluteRequest(head: string, path: string): string {
+  const lines = String(head || '').replace(/[\r\n]+$/, '').split(/\r?\n/);
+  const parts = (lines[0] || '').split(WHITESPACE_RE);
+  const requestLine = [parts[0], path || '/', parts[2] || 'HTTP/1.1'].join(' ');
+  return [requestLine, ...lines.slice(1)].join('\r\n');
+}
+
 function createMitmProxyManager(deps: any = {}) {
   const { config, ca, friendExtractor, sessionStore, log = () => {} } = deps;
   const activeServers = new Map<string, any>();
@@ -411,10 +419,7 @@ function createMitmProxyManager(deps: any = {}) {
 
     const upstream = net.connect({ host, port });
     upstream.once('connect', () => {
-      const lines = head.split('\r\n');
-      const parts = (lines[0] || '').split(WHITESPACE_RE);
-      const rewritten = [parts[0], path || '/', parts[2] || 'HTTP/1.1', ...lines.slice(1)].join('\r\n');
-      upstream.write(`${rewritten}\r\n\r\n`);
+      upstream.write(`${rewriteAbsoluteRequest(head, path || '/')}\r\n\r\n`);
       if (rest.length > 0) upstream.write(rest);
       rawSocket.on('data', (chunk: Buffer) => upstream.write(chunk));
       upstream.on('data', (chunk: Buffer) => rawSocket.write(chunk));
@@ -437,4 +442,5 @@ module.exports = {
   findHeadEnd,
   parseAbsoluteUrl,
   parseConnectLine,
+  rewriteAbsoluteRequest,
 };

@@ -151,4 +151,13 @@ export interface GlobalConfig {
   loginSettings: LoginSettings;
   offlineReminder: OfflineReminder;
   systemConfig: SystemConfig | null;
+  captureConfig?: CaptureConfig;
+}
+
+export interface CaptureConfig {
+  enabled: boolean;
+  embedded: boolean;
+  apiBase: string;
+  apiToken: string;
+  autoImportQqGids: boolean;
 }

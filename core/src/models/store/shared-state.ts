@@ -504,6 +504,7 @@ const globalConfig: GlobalConfig = {
     loginSettings: { ...DEFAULT_LOGIN_SETTINGS },
     offlineReminder: { ...DEFAULT_OFFLINE_REMINDER },
     systemConfig: null,
+    captureConfig: undefined,
 };
 
 function resolveAccountId(accountId: unknown): string {
@@ -540,6 +541,10 @@ function loadGlobalConfig(): void {
             // offlineReminder normalization done in global-config
             if (data.offlineReminder && typeof data.offlineReminder === 'object') {
                 globalConfig.offlineReminder = data.offlineReminder;
+            }
+
+            if (data.captureConfig && typeof data.captureConfig === 'object') {
+                globalConfig.captureConfig = { ...data.captureConfig };
             }
 
             if (data.loginSettings && typeof data.loginSettings === 'object') {
