@@ -5,6 +5,7 @@ import { NRadio, NRadioGroup } from 'naive-ui/es/radio'
 import { NTab, NTabs } from 'naive-ui/es/tabs'
 import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import api, { getApiErrorMessage } from '@/api'
+import CaptureLoginPanel from '@/components/CaptureLoginPanel.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
 import BaseTextarea from '@/components/ui/BaseTextarea.vue'
@@ -19,8 +20,9 @@ const emit = defineEmits(['close', 'saved'])
 
 const loading = ref(false)
 const errorMessage = ref('')
-const activeLoginTab = ref<'code' | 'wx_qr' | 'qq_qr'>('code')
+const activeLoginTab = ref<'code' | 'wx_qr' | 'qq_qr' | 'capture'>('code')
 const loginSettingsLoaded = ref(false)
+const captureEnabled = ref(false)
 const loginSettings = ref({
   wechatQrLogin: true,
   qqQrLogin: false,
@@ -187,6 +189,18 @@ async function loadLoginSettings() {
         void startQqLogin()
     }
   }
+}
+
+async function loadCaptureConfig() {
+  try {
+    const response = await api.get('/api/capture/config', { skipErrorToast: true } as any)
+    captureEnabled.value = response.data?.ok === true && response.data?.data?.enabled === true
+  }
+  catch {
+    captureEnabled.value = false
+  }
+  if (!captureEnabled.value && activeLoginTab.value === 'capture')
+    activeLoginTab.value = 'code'
 }
 
 // 手动提交
@@ -597,6 +611,11 @@ async function startQqLogin() {
   }
 }
 
+function handleCaptureSaved() {
+  emit('saved')
+  close()
+}
+
 function close() {
   resetWxLogin()
   resetQqLogin()
@@ -608,8 +627,10 @@ watch(() => props.show, (newVal) => {
     errorMessage.value = ''
     activeLoginTab.value = 'code'
     resetWxLogin()
-    if (!props.editData)
+    if (!props.editData) {
       void loadLoginSettings()
+      void loadCaptureConfig()
+    }
     if (props.editData) {
       form.name = props.editData.name || ''
       form.code = props.editData.code || ''
@@ -631,6 +652,8 @@ watch(activeLoginTab, (tab) => {
   else if (tab === 'qq_qr' && qqQrLoginEnabled.value && !qqTaskId.value)
     void startQqLogin()
   else if (tab === 'qq_qr' && !qqQrLoginEnabled.value)
+    activeLoginTab.value = 'code'
+  else if (tab === 'capture' && !captureEnabled.value)
     activeLoginTab.value = 'code'
   if (tab !== 'wx_qr')
     resetWxLogin()
@@ -685,6 +708,9 @@ onBeforeUnmount(() => {
           </NTab>
           <NTab v-if="qqQrLoginEnabled" name="qq_qr">
             QQ扫码登录
+          </NTab>
+          <NTab v-if="captureEnabled" name="capture">
+            抓包登录
           </NTab>
         </NTabs>
 
@@ -784,6 +810,12 @@ onBeforeUnmount(() => {
             </BaseButton>
           </div>
         </div>
+        <CaptureLoginPanel
+          v-else-if="activeLoginTab === 'capture'"
+          :initial-name="form.name"
+          @saved="handleCaptureSaved"
+          @cancel="close"
+        />
       </div>
     </NCard>
   </NModal>

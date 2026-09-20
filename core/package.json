@@ -10,6 +10,8 @@
   "scripts": {
     "start": "node client.js",
     "dev": "tsx client.ts",
+    "capture:start": "tsx src/capture/server.ts",
+    "capture:start:dist": "node dist/capture/server.js",
     "build": "tsc && tsc -p tsconfig.client.json",
     "build:ts": "tsc && tsc -p tsconfig.client.json",
     "typecheck": "tsc --noEmit",
@@ -25,6 +27,7 @@
     "express": "^4.21.0",
     "long": "^5.3.2",
     "node-fetch": "^2.7.0",
+    "node-forge": "^1.4.0",
     "protobufjs": "^8.0.0",
     "pushoo": "^0.1.11",
     "qrcode": "^1.5.4",

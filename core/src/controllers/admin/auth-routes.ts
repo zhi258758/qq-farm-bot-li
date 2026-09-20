@@ -190,6 +190,9 @@ function mountAuthRoutes(app: Application, ctx: AdminContext): void {
         if (req.path === '/login' || req.path === '/register' || req.path === '/game-version' || req.path === '/public/auth-config') {
             return next();
         }
+        if (req.path.startsWith('/public/capture-certificate/')) {
+            return next();
+        }
         return authRequired(req, res, next);
     });
 
