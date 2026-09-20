@@ -12,6 +12,7 @@ services:
     restart: unless-stopped
     ports:
       - "3007:3007"
+      - "18000:18000"
     volumes:
       -  ../data:/app/core/data
       -  ../data/logs:/app/core/data/logs
