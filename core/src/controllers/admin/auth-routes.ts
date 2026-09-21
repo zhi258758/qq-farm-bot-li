@@ -98,12 +98,6 @@ function mountAuthRoutes(app: Application, ctx: AdminContext): void {
         const { username, password, cardCode, qq } = req.body || {};
         const adminInfo = adminStore.getAdminInfo();
 
-        const groupVerify = store.getGroupVerifyConfig ? store.getGroupVerifyConfig() : null;
-        if (groupVerify && groupVerify.enabled === true) {
-            const passed = await checkGroupMembership(res, qq, groupVerify);
-            if (!passed) return;
-        }
-
         const result = await cardkeyStore.registerUserWithCard({
             username: String(username || ''),
             password: String(password || ''),

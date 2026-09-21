@@ -126,10 +126,16 @@ async function handleSubmit() {
       ? await userStore.register(username.value, password.value, cardCode.value.trim(), qq.value.trim())
       : await userStore.login(username.value, password.value)
     if (result.ok) {
+      if (mode.value === 'register') {
+        success.value = '注册成功，请使用该账号重新登录'
+        mode.value = 'login'
+        password.value = ''
+        cardCode.value = ''
+        qq.value = ''
+        return
+      }
       if (result.data?.mustChangePassword)
         success.value = '登录成功，请修改默认密码'
-      else if (mode.value === 'register')
-        success.value = '注册成功'
       setTimeout(() => {
         const next = userStore.isAdmin || userStore.membershipActive
           ? '/'
@@ -143,7 +149,7 @@ async function handleSubmit() {
         qqGroupNumber: result.qqGroupNumber || '',
       }
       showGroupVerifyModal.value = true
-      error.value = result.error || '请先加入QQ群后再登录'
+      error.value = ''
     }
     else if (result.errorType === 'rate_limit') {
       error.value = result.error || '请求过于频繁，请稍后重试'
@@ -167,7 +173,7 @@ async function handleSubmit() {
         qqGroupNumber: data.qqGroupNumber || '',
       }
       showGroupVerifyModal.value = true
-      error.value = data.error || '请先加入QQ群后再登录'
+      error.value = ''
     }
     else if (data?.errorType === 'rate_limit') {
       error.value = getApiErrorMessage(data, '请求过于频繁')
@@ -333,6 +339,9 @@ onMounted(() => {
             placeholder="请输入QQ号"
             required
           />
+          <p class="form-hint error">
+            务必使用此QQ号加入QQ群，否则登录时无法通过验证
+          </p>
           <p v-if="qq && !qqValid.valid" class="form-hint error">
             {{ qqValid.message }}
           </p>

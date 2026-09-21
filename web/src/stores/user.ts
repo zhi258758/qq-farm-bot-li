@@ -100,8 +100,6 @@ export const useUserStore = defineStore('user', () => {
   async function register(username: string, password: string, cardCode: string, qq: string): Promise<LoginResult> {
     try {
       const res = await api.post('/api/register', { username, password, cardCode, qq })
-      if (res.data.ok)
-        applyAuthPayload(res.data.data)
       return res.data
     }
     catch (error: any) {
