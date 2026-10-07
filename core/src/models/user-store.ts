@@ -144,6 +144,10 @@ function registerUser(
     if (!nameCheck.ok) return { ok: false, error: nameCheck.error, status: 400 };
     const pwd = String(password || '');
     if (!pwd) return { ok: false, error: '请输入密码', status: 400 };
+    const strength = security.validatePasswordStrength(pwd);
+    if (!strength.valid) {
+        return { ok: false, error: strength.errors[0] || '密码强度不足', status: 400 };
+    }
 
     const qqCheck = normalizeQq(opts.qq == null ? '' : opts.qq);
     if (!qqCheck.ok) return { ok: false, error: qqCheck.error, status: 400 };

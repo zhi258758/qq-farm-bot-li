@@ -21,8 +21,10 @@ function uniqueName(prefix) {
     return `${prefix}_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
 }
 
+const TEST_PASSWORD = 'Pw1234';
+
 function registerUser(prefix = 'user') {
-    const result = userStore.registerUser(uniqueName(prefix), 'pw', { qq: '10001' });
+    const result = userStore.registerUser(uniqueName(prefix), TEST_PASSWORD, { qq: '10001' });
     assert.equal(result.ok, true);
     return result.user;
 }
@@ -45,12 +47,20 @@ test('new users get two slots and no membership', () => {
 });
 
 test('registration requires a valid qq number', () => {
-    const bad = userStore.registerUser(uniqueName('qq'), 'pw', { qq: 'abc' });
+    const bad = userStore.registerUser(uniqueName('qq'), TEST_PASSWORD, { qq: 'abc' });
     assert.equal(bad.ok, false);
     assert.equal(bad.error, 'QQ号格式不正确，应为5-11位数字');
-    const missing = userStore.registerUser(uniqueName('qq'), 'pw', { qq: '' });
+    const missing = userStore.registerUser(uniqueName('qq'), TEST_PASSWORD, { qq: '' });
     assert.equal(missing.ok, false);
     assert.equal(missing.error, '请输入QQ号');
+});
+
+test('registration requires mixed password types', () => {
+    const weak = userStore.registerUser(uniqueName('weak'), 'password', { qq: '10001' });
+    assert.equal(weak.ok, false);
+    assert.ok(weak.error);
+    const short = userStore.registerUser(uniqueName('short'), 'Ab1', { qq: '10001' });
+    assert.equal(short.ok, false);
 });
 
 test('registration consumes a time card and activates membership', async () => {
@@ -58,7 +68,7 @@ test('registration consumes a time card and activates membership', async () => {
     const created = cardkeyStore.createCardKeys({ type: 'time', value: 30, count: 1 });
     const code = created.keys[0].rawCode || created.keys[0].code;
     const username = uniqueName('reg');
-    const result = await cardkeyStore.registerUserWithCard({ username, password: 'pw', qq: '10086', code });
+    const result = await cardkeyStore.registerUserWithCard({ username, password: TEST_PASSWORD, qq: '10086', code });
     assert.equal(result.ok, true);
     assert.equal(result.user.qq, '10086');
     assert.equal(result.user.membershipActive, true);
@@ -69,7 +79,7 @@ test('registration consumes a time card and activates membership', async () => {
     assert.equal(listed[0].status, 'used');
     assert.equal(listed[0].usedByUsername, username);
 
-    const reuse = await cardkeyStore.registerUserWithCard({ username: uniqueName('reg2'), password: 'pw', qq: '10087', code });
+    const reuse = await cardkeyStore.registerUserWithCard({ username: uniqueName('reg2'), password: TEST_PASSWORD, qq: '10087', code });
     assert.equal(reuse.ok, false);
     assert.equal(reuse.error, '卡密无效或已被使用');
 });
@@ -78,11 +88,11 @@ test('registration rejects quota cards and invalid card codes', async () => {
     authConfigStore.setAuthConfig({ registrationEnabled: true });
     const quota = cardkeyStore.createCardKeys({ type: 'quota', value: 3, count: 1 });
     const quotaCode = quota.keys[0].rawCode || quota.keys[0].code;
-    const quotaResult = await cardkeyStore.registerUserWithCard({ username: uniqueName('regq'), password: 'pw', qq: '10088', code: quotaCode });
+    const quotaResult = await cardkeyStore.registerUserWithCard({ username: uniqueName('regq'), password: TEST_PASSWORD, qq: '10088', code: quotaCode });
     assert.equal(quotaResult.ok, false);
     assert.equal(quotaResult.error, '注册只能使用时间卡密，额度卡密请登录后兑换');
 
-    const missing = await cardkeyStore.registerUserWithCard({ username: uniqueName('regx'), password: 'pw', qq: '10089', code: 'QFNOTEXIST' });
+    const missing = await cardkeyStore.registerUserWithCard({ username: uniqueName('regx'), password: TEST_PASSWORD, qq: '10089', code: 'QFNOTEXIST' });
     assert.equal(missing.ok, false);
     assert.equal(missing.error, '卡密无效或已被使用');
 });

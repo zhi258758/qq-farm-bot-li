@@ -102,6 +102,17 @@ async function verifyGenericMembership(qq: unknown, config: any): Promise<any> {
     }
 }
 
+function memberListIncludes(members: unknown, qq: unknown): boolean {
+    if (!Array.isArray(members)) return false;
+    const target = Number(String(qq || '').trim());
+    if (Number.isNaN(target)) return false;
+    return members.some((m: any) => {
+        if (!m || typeof m !== 'object') return false;
+        const id = m.user_id !== undefined ? m.user_id : m.uin;
+        return Number(id) === target;
+    });
+}
+
 function napcatErrorKind(message: unknown): string {
     return NAPCAT_NON_MEMBER_RE.test(String(message || '')) ? 'not_in_group' : 'service_unavailable';
 }
@@ -195,6 +206,7 @@ async function verifyGroupMembership(qq: unknown, config: any): Promise<any> {
 module.exports = {
     normalizeVerifyMode,
     verifyClampTimeout,
+    memberListIncludes,
     verifyGenericMembership,
     verifyNapcatMembership,
     verifyGroupMembership,

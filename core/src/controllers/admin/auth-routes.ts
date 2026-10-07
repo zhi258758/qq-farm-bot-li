@@ -96,6 +96,9 @@ function mountAuthRoutes(app: Application, ctx: AdminContext): void {
             return res.status(403).json({ ok: false, error: '注册未开放' });
         }
         const { username, password, cardCode, qq } = req.body || {};
+        if (!username || !password || !cardCode || !qq) {
+            return res.status(400).json({ ok: false, error: '用户名、密码、卡密和QQ号均不能为空' });
+        }
         const adminInfo = adminStore.getAdminInfo();
 
         const result = await cardkeyStore.registerUserWithCard({

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import api, { getApiErrorMessage } from '@/api'
 import AnnouncementModal from '@/components/AnnouncementModal.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
@@ -8,6 +8,12 @@ import { useToastStore } from '@/stores/toast'
 import { useUserStore } from '@/stores/user'
 
 declare const __APP_VERSION__: string
+
+const LOWERCASE_RE = /[a-z]/
+const UPPERCASE_RE = /[A-Z]/
+const DIGIT_RE = /\d/
+const SPECIAL_CHAR_RE = /[!@#$%^&*(),.?":{}|<>_\-+=[\]\\;'/`~]/
+const QQ_RE = /^\d{5,11}$/
 
 const userStore = useUserStore()
 const toastStore = useToastStore()
@@ -20,12 +26,21 @@ const qq = ref('')
 const error = ref('')
 const success = ref('')
 const loading = ref(false)
+const showPasswordStrength = ref(false)
 const lockoutRemaining = ref(0)
 const rateLimitRemaining = ref(0)
 const mode = ref<'login' | 'register'>('login')
 const registrationEnabled = ref(false)
 const cardClaimEnabled = ref(false)
 const cardClaimLoading = ref(false)
+const showClaimModal = ref(false)
+const claimModalContent = ref({
+  success: true,
+  title: '',
+  message: '',
+  cardCode: '',
+  days: 0,
+})
 const loginLinks = ref({
   logoUrl: '',
   title: 'QQ农场智能助手',
@@ -57,9 +72,53 @@ const qqValid = computed(() => {
   const value = qq.value.trim()
   if (!value)
     return { valid: false, message: '' }
-  if (!/^\d{5,11}$/.test(value))
+  if (!QQ_RE.test(value))
     return { valid: false, message: 'QQ号应为5-11位数字' }
   return { valid: true, message: '' }
+})
+
+const passwordStrength = computed(() => {
+  const pwd = password.value
+  if (!pwd)
+    return { score: 0, level: '', color: '', valid: false }
+
+  let score = 0
+  if (pwd.length >= 6)
+    score++
+  if (pwd.length >= 10)
+    score++
+
+  let typeCount = 0
+  if (LOWERCASE_RE.test(pwd))
+    typeCount++
+  if (UPPERCASE_RE.test(pwd))
+    typeCount++
+  if (DIGIT_RE.test(pwd))
+    typeCount++
+  if (SPECIAL_CHAR_RE.test(pwd))
+    typeCount++
+
+  if (typeCount >= 2)
+    score += 2
+  if (typeCount >= 3)
+    score++
+  if (typeCount >= 4)
+    score++
+
+  const commonPasswords = ['password', '123456', 'qwerty', 'abc123', '111111']
+  if (commonPasswords.some(p => pwd.toLowerCase().includes(p)))
+    score = Math.max(0, score - 2)
+
+  const level = score <= 2 ? '弱' : score <= 4 ? '中' : score <= 6 ? '强' : '非常强'
+  const color = score <= 2 ? '#ef5350' : score <= 4 ? '#ffa726' : score <= 6 ? '#22c55e' : '#16a34a'
+  const valid = pwd.length >= 6 && typeCount >= 2
+
+  return { score, level, color, valid }
+})
+
+watch(password, () => {
+  if (mode.value === 'register' && password.value)
+    showPasswordStrength.value = true
 })
 
 function validateForm(): boolean {
@@ -76,16 +135,39 @@ function validateForm(): boolean {
     return false
   }
   if (mode.value === 'register') {
+    if (password.value.length < 6) {
+      error.value = '密码长度至少6位'
+      return false
+    }
+    if (!passwordStrength.value.valid) {
+      error.value = '密码强度不足：需包含大写字母、小写字母、数字、特殊符号中的至少两种'
+      return false
+    }
     if (!cardCode.value.trim()) {
       error.value = '请输入卡密'
       return false
     }
+    if (!qq.value.trim()) {
+      error.value = '请输入QQ号（填写的QQ必须已加入QQ群）'
+      return false
+    }
     if (!qqValid.value.valid) {
-      error.value = qq.value.trim() ? 'QQ号应为5-11位数字' : '请输入QQ号'
+      error.value = 'QQ号应为5-11位数字'
       return false
     }
   }
   return true
+}
+
+function openClaimModal(payload: { success: boolean, title: string, message: string, cardCode?: string, days?: number }) {
+  claimModalContent.value = {
+    success: payload.success,
+    title: payload.title,
+    message: payload.message,
+    cardCode: payload.cardCode || '',
+    days: payload.days || 0,
+  }
+  showClaimModal.value = true
 }
 
 async function claimFreeCard() {
@@ -98,19 +180,37 @@ async function claimFreeCard() {
     const result = await userStore.claimFreeCard()
     if (result.ok) {
       cardCode.value = result.data?.cardCode || ''
-      success.value = `领取成功，已自动填入卡密（${result.data?.days || 0} 天）`
+      openClaimModal({
+        success: true,
+        title: '领取成功',
+        message: `成功领取 ${result.data?.days || 0} 天卡密！`,
+        cardCode: result.data?.cardCode || '',
+        days: result.data?.days || 0,
+      })
     }
     else {
-      error.value = result.error || '领取失败，请稍后重试'
+      openClaimModal({
+        success: false,
+        title: '领取失败',
+        message: result.error || '领取失败，请稍后重试',
+      })
     }
   }
   catch (e: any) {
     const data = e.response?.data
-    error.value = data?.error || getApiErrorMessage(e, '领取失败')
+    openClaimModal({
+      success: false,
+      title: '领取失败',
+      message: data?.error || getApiErrorMessage(e, '领取失败'),
+    })
   }
   finally {
     cardClaimLoading.value = false
   }
+}
+
+function closeClaimModal() {
+  showClaimModal.value = false
 }
 
 async function handleSubmit() {
@@ -149,7 +249,7 @@ async function handleSubmit() {
         qqGroupNumber: result.qqGroupNumber || '',
       }
       showGroupVerifyModal.value = true
-      error.value = ''
+      error.value = result.error || '请先加入QQ群后再登录'
     }
     else if (result.errorType === 'rate_limit') {
       error.value = result.error || '请求过于频繁，请稍后重试'
@@ -173,7 +273,7 @@ async function handleSubmit() {
         qqGroupNumber: data.qqGroupNumber || '',
       }
       showGroupVerifyModal.value = true
-      error.value = ''
+      error.value = data.error || '请先加入QQ群后再登录'
     }
     else if (data?.errorType === 'rate_limit') {
       error.value = getApiErrorMessage(data, '请求过于频繁')
@@ -300,6 +400,17 @@ onMounted(() => {
             autocomplete="current-password"
             required
           />
+          <div v-if="showPasswordStrength && mode === 'register' && password" class="password-strength">
+            <div class="strength-bar">
+              <div
+                class="strength-fill"
+                :style="{ width: `${Math.min(passwordStrength.score * 12.5, 100)}%`, backgroundColor: passwordStrength.color }"
+              />
+            </div>
+            <span class="strength-text" :style="{ color: passwordStrength.color }">
+              {{ passwordStrength.level }}
+            </span>
+          </div>
         </div>
 
         <div v-if="mode === 'register'" class="form-group">
@@ -339,8 +450,8 @@ onMounted(() => {
             placeholder="请输入QQ号"
             required
           />
-          <p class="form-hint error">
-            务必使用此QQ号加入QQ群，否则登录时无法通过验证
+          <p class="form-hint error" style="font-weight: 700">
+            重要：填写的 QQ 一定要加群，否则登录不了！
           </p>
           <p v-if="qq && !qqValid.valid" class="form-hint error">
             {{ qqValid.message }}
@@ -370,9 +481,9 @@ onMounted(() => {
           v-if="registrationEnabled"
           type="button"
           class="mode-switch"
-          @click="mode = mode === 'login' ? 'register' : 'login'; error = ''; success = ''"
+          @click="mode = mode === 'login' ? 'register' : 'login'; error = ''; success = ''; showPasswordStrength = false"
         >
-          {{ mode === 'login' ? '没有账号？去注册' : '已有账号？去登录' }}
+          {{ mode === 'login' ? '没有账号？立即注册' : '已有账号？立即登录' }}
         </button>
       </form>
 
@@ -435,6 +546,37 @@ onMounted(() => {
             </BaseButton>
             <BaseButton variant="ghost" block class="mt-2" @click="closeGroupVerifyModal">
               我知道了
+            </BaseButton>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
+
+    <Teleport to="body">
+      <Transition name="announcement-fade">
+        <div
+          v-if="showClaimModal"
+          class="verify-modal-mask"
+          @click.self="closeClaimModal"
+        >
+          <div class="verify-modal">
+            <div class="verify-modal-head">
+              <h3>{{ claimModalContent.title }}</h3>
+            </div>
+            <div class="verify-modal-desc">
+              {{ claimModalContent.message }}
+            </div>
+            <div
+              v-if="claimModalContent.success && claimModalContent.cardCode"
+              class="verify-modal-info"
+            >
+              <div>卡密已自动填入</div>
+              <div style="word-break: break-all; font-weight: 600">
+                {{ claimModalContent.cardCode }}
+              </div>
+            </div>
+            <BaseButton variant="primary" block @click="closeClaimModal">
+              {{ claimModalContent.success ? '开始注册' : '我知道了' }}
             </BaseButton>
           </div>
         </div>
@@ -575,6 +717,32 @@ onMounted(() => {
   margin: 0;
   color: var(--ui-danger);
   font-size: 11px;
+}
+
+.password-strength {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.strength-bar {
+  flex: 1;
+  height: 4px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: #e5e7eb;
+}
+
+.strength-fill {
+  height: 100%;
+  transition: width 0.3s ease;
+}
+
+.strength-text {
+  min-width: 50px;
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .claim-btn {
